@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>SVG リサイズ & 寸法線ジェネレーター</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <main class="container">
+    <header>
+      <h1>SVG リサイズ &amp; 寸法線ジェネレーター</h1>
+      <p>SVG ファイルを読み込み、サイズを変更した後に寸法線付きの画像を作成できます。</p>
+    </header>
+
+    <section class="panel">
+      <h2>1. SVG を読み込む</h2>
+      <label class="file-input">
+        <span>SVG ファイルを選択</span>
+        <input type="file" id="fileInput" accept="image/svg+xml">
+      </label>
+      <p class="or">または</p>
+      <textarea id="svgTextInput" placeholder="ここに SVG のソースコードを貼り付けてください"></textarea>
+      <button id="loadFromText" class="primary">SVG を読み込む</button>
+      <div id="originalInfo" class="info"></div>
+      <div id="originalPreview" class="preview" aria-live="polite"></div>
+    </section>
+
+    <section class="panel" id="resizeSection" hidden>
+      <h2>2. サイズを指定</h2>
+      <div class="dimension-inputs">
+        <label>
+          幅 (px)
+          <input type="number" id="widthInput" min="1" step="0.5">
+        </label>
+        <label>
+          高さ (px)
+          <input type="number" id="heightInput" min="1" step="0.5">
+        </label>
+      </div>
+      <label class="ratio">
+        <input type="checkbox" id="lockRatio" checked>
+        アスペクト比を維持する
+      </label>
+      <div class="actions">
+        <button id="generateButton" class="primary">リサイズ &amp; 寸法線を生成</button>
+      </div>
+    </section>
+
+    <section class="panel" id="resultsSection" hidden>
+      <h2>3. 出力</h2>
+      <div class="result-block">
+        <h3>リサイズ後の SVG</h3>
+        <div class="preview" id="resizedPreview"></div>
+        <a id="downloadSvg" class="download" download="resized.svg">リサイズした SVG をダウンロード</a>
+      </div>
+      <div class="result-block">
+        <h3>寸法線付き PNG</h3>
+        <div class="preview image" id="dimensionedPreview"></div>
+        <a id="downloadPng" class="download" download="dimensioned.png">寸法線付き PNG をダウンロード</a>
+      </div>
+    </section>
+  </main>
+
+  <footer>
+    <p>ブラウザだけで完結する静的アプリです。データはアップロードされません。</p>
+  </footer>
+
+  <script src="script.js"></script>
+</body>
+</html>
