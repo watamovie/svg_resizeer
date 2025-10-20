@@ -12,6 +12,11 @@
   const backgroundColorInput = document.getElementById('backgroundColor');
   const transparentBackgroundCheckbox = document.getElementById('transparentBackground');
   const showDimensionsCheckbox = document.getElementById('showDimensions');
+  const dimensionFontSizeSlider = document.getElementById('dimensionFontSize');
+  const dimensionFontSizeValue = document.getElementById('dimensionFontSizeValue');
+  const dimensionFontSizeGroup = dimensionFontSizeSlider
+    ? dimensionFontSizeSlider.closest('.control-group')
+    : null;
   const previewArea = document.getElementById('previewArea');
   const messageEl = document.getElementById('message');
   const downloadSvgLink = document.getElementById('downloadSvg');
@@ -296,6 +301,7 @@
       includeDimensions = true,
       backgroundColor = '#ffffff',
       transparentBackground = false,
+      dimensionTextScale = 1,
     } = options;
     const metrics = getMetrics(svgEl);
     const viewBox = metrics.viewBox;
@@ -323,13 +329,21 @@
     const marginBase = Math.max(Math.max(viewBox.width, viewBox.height) * 0.12, 24);
     const scaleRef = Math.max(viewBox.width, viewBox.height) || 1;
     const strokeWidth = Math.max(scaleRef * 0.004, 0.75);
-    const fontSize = Math.max(scaleRef * 0.06, 12);
-    const tickSize = Math.max(marginBase * 0.35, Math.min(viewBox.width, viewBox.height) * 0.08, 8);
-    const textOffset = Math.max(fontSize * 0.6, strokeWidth * 6, tickSize * 0.75);
-    const dimOffset = Math.max(marginBase * 0.6, tickSize);
+    const baseFontSize = Math.max(scaleRef * 0.06, 12);
+    const fontSize = baseFontSize * Math.max(dimensionTextScale, 0.2);
+    const tickSize = Math.max(
+      marginBase * 0.35,
+      Math.min(viewBox.width, viewBox.height) * 0.08,
+      8
+    );
+    const textOffset = Math.max(fontSize * 0.7, strokeWidth * 6, tickSize * 0.85);
+    const dimOffset = Math.max(marginBase * 0.6, tickSize + fontSize * 0.35);
 
-    const bottomMargin = Math.max(marginBase, dimOffset + tickSize + textOffset + fontSize * 0.5);
-    const rightMargin = Math.max(marginBase, dimOffset + tickSize + textOffset + fontSize * 0.5);
+    const bottomMargin = Math.max(
+      marginBase,
+      dimOffset + tickSize + textOffset + fontSize * 1.1
+    );
+    const rightMargin = Math.max(marginBase, dimOffset + tickSize + textOffset + fontSize * 0.9);
     const topMargin = marginBase;
     const leftMargin = marginBase;
 
@@ -343,7 +357,7 @@
     const horizontalY = viewBox.minY + viewBox.height + dimOffset;
     const verticalX = viewBox.minX + viewBox.width + dimOffset;
 
-    const horizontalLabelY = horizontalY - textOffset;
+    const horizontalLabelY = horizontalY + textOffset;
     const verticalLabelX = verticalX + textOffset;
 
     const markerIdBase = 'dimension-arrow-marker';
@@ -390,7 +404,7 @@
     const labels = includeDimensions
       ? `
       <g data-generated-by="dimension-overlay" fill="${dimensionColors.text}" font-size="${fontSize}" font-weight="600" font-family="'Segoe UI', 'Hiragino Sans', 'Yu Gothic', sans-serif">
-        <text x="${viewBox.minX + viewBox.width / 2}" y="${horizontalLabelY}" text-anchor="middle" dominant-baseline="middle">幅 ${formatNumber(displayWidth)}${unitLabel}</text>
+        <text x="${viewBox.minX + viewBox.width / 2}" y="${horizontalLabelY}" text-anchor="middle" dominant-baseline="text-before-edge">幅 ${formatNumber(displayWidth)}${unitLabel}</text>
         <text x="${verticalLabelX}" y="${viewBox.minY + viewBox.height / 2}" text-anchor="middle" dominant-baseline="middle" transform="rotate(-90 ${verticalLabelX} ${viewBox.minY + viewBox.height / 2})">高さ ${formatNumber(displayHeight)}${unitLabel}</text>
       </g>`
       : '';
@@ -487,6 +501,9 @@
         transparentBackground: transparentBackgroundCheckbox
           ? transparentBackgroundCheckbox.checked
           : false,
+        dimensionTextScale: dimensionFontSizeSlider
+          ? Math.max(parseFloat(dimensionFontSizeSlider.value) / 100, 0.2)
+          : 1,
       });
       previewArea.innerHTML = svgString;
       updateDownloads(svgString, targetWidthPx, targetHeightPx);
@@ -625,6 +642,33 @@
     performResize({ silent: true });
   }
 
+  const updateDimensionFontSizeValue = () => {
+    if (!dimensionFontSizeSlider || !dimensionFontSizeValue) return;
+    dimensionFontSizeValue.textContent = `${dimensionFontSizeSlider.value}%`;
+  };
+
+  if (dimensionFontSizeSlider) {
+    dimensionFontSizeSlider.addEventListener('input', () => {
+      updateDimensionFontSizeValue();
+      refreshPreviewIfReady();
+    });
+    updateDimensionFontSizeValue();
+  }
+
+  const updateDimensionControlsState = () => {
+    if (!dimensionFontSizeSlider) return;
+    const enabled = showDimensionsCheckbox ? showDimensionsCheckbox.checked : true;
+    dimensionFontSizeSlider.disabled = !enabled;
+    if (enabled) {
+      dimensionFontSizeSlider.removeAttribute('aria-disabled');
+    } else {
+      dimensionFontSizeSlider.setAttribute('aria-disabled', 'true');
+    }
+    if (dimensionFontSizeGroup) {
+      dimensionFontSizeGroup.classList.toggle('is-disabled', !enabled);
+    }
+  };
+
   widthInput.addEventListener('input', () => {
     const unit = unitSelect.value;
     const widthValue = parsePositiveNumber(widthInput.value);
@@ -743,8 +787,12 @@
 
   if (showDimensionsCheckbox) {
     showDimensionsCheckbox.addEventListener('change', () => {
+      updateDimensionControlsState();
       refreshPreviewIfReady();
     });
+    updateDimensionControlsState();
+  } else {
+    updateDimensionControlsState();
   }
 
   svgInput.addEventListener('input', () => {

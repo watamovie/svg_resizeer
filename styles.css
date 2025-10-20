@@ -183,6 +183,72 @@ textarea:focus {
   gap: 0.4rem;
 }
 
+.control-group.range-group {
+  align-self: stretch;
+}
+
+.control-group input[type="range"] {
+  width: 100%;
+  appearance: none;
+  height: 6px;
+  border-radius: 9999px;
+  background: linear-gradient(90deg, var(--accent) 0%, var(--accent-strong) 100%);
+  outline: none;
+  cursor: pointer;
+}
+
+.control-group input[type="range"]:disabled {
+  background: linear-gradient(90deg, var(--border) 0%, var(--border) 100%);
+  cursor: not-allowed;
+}
+
+.control-group input[type="range"]::-webkit-slider-thumb {
+  appearance: none;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: var(--surface);
+  border: 2px solid var(--accent);
+  box-shadow: 0 2px 6px rgba(15, 23, 42, 0.15);
+  transition: transform 0.15s ease;
+}
+
+.control-group input[type="range"]::-moz-range-thumb {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: var(--surface);
+  border: 2px solid var(--accent);
+  box-shadow: 0 2px 6px rgba(15, 23, 42, 0.15);
+  transition: transform 0.15s ease;
+}
+
+.control-group input[type="range"]:focus-visible::-webkit-slider-thumb,
+.control-group input[type="range"]:focus-visible::-moz-range-thumb {
+  transform: scale(1.1);
+}
+
+.control-group input[type="range"]:disabled::-webkit-slider-thumb,
+.control-group input[type="range"]:disabled::-moz-range-thumb {
+  border-color: var(--border);
+}
+
+.control-group .range-value {
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: var(--muted);
+  text-align: right;
+}
+
+.control-group.is-disabled {
+  opacity: 0.55;
+}
+
+.control-group.is-disabled input,
+.control-group.is-disabled .range-value {
+  pointer-events: none;
+}
+
 .control-group input[type="number"],
 .control-group select {
   width: 100%;

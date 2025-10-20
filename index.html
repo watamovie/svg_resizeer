@@ -64,6 +64,20 @@
             <input type="checkbox" id="showDimensions" checked />
             寸法線を表示
           </label>
+          <div class="control-group range-group">
+            <label for="dimensionFontSize">寸法文字サイズ</label>
+            <input
+              type="range"
+              id="dimensionFontSize"
+              min="50"
+              max="200"
+              step="10"
+              value="100"
+            />
+            <div class="range-value" aria-live="polite">
+              <span id="dimensionFontSizeValue">100%</span>
+            </div>
+          </div>
           <button id="resizeButton" class="primary">リサイズして寸法線を追加</button>
         </div>
         <p class="hint">
