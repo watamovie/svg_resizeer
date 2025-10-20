@@ -20,3 +20,19 @@ SVGファイルを読み込み、指定したサイズへリサイズしたう�
 - `script.js` — SVGの解析・リサイズ処理と寸法線の生成
 
 ビルド工程は不要で、そのまま静的ホスティングに配置できます。
+
+## Cloudflare Pages へのデプロイ
+
+このリポジトリは静的サイトとして構成されているため、Cloudflare Pages からそのまま配信できます。
+
+1. Cloudflare ダッシュボードから Pages プロジェクトを作成します。
+2. 「ビルド設定」でフレームワークは **None** を選択し、ビルドコマンドは空欄、出力ディレクトリに `.` を指定します。
+3. デプロイ後に `index.html` がトップページとして配信され、`script.js` と `styles.css` も自動的に参照されます。
+
+CLI でプレビューしたい場合は [Wrangler](https://developers.cloudflare.com/workers/wrangler/install-and-update/) をインストールし、以下を実行します。
+
+```bash
+wrangler pages dev
+```
+
+`wrangler.toml` には Pages 用の出力ディレクトリが設定済みです。
