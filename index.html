@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>SVG リサイズ & 寸法線ジェネレーター</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <header>
+    <h1>SVG リサイズ &amp; 寸法線ジェネレーター</h1>
+    <p>SVG ファイルを読み込み、任意のサイズへリサイズした上で寸法線付きの SVG を出力します。</p>
+  </header>
+
+  <main>
+    <section class="card">
+      <h2>1. SVG を読み込む</h2>
+      <label class="file-input">
+        <span>SVG ファイルを選択</span>
+        <input type="file" id="svgFile" accept="image/svg+xml">
+      </label>
+      <textarea id="svgSource" placeholder="またはここに SVG ソースを貼り付けてください"></textarea>
+      <button id="loadSvg" class="primary">読み込む</button>
+      <p class="hint">ファイルを選択するか、SVG テキストを貼り付けてから「読み込む」を押してください。</p>
+    </section>
+
+    <section class="card" id="controls" hidden>
+      <h2>2. サイズを調整する</h2>
+      <div class="control-grid">
+        <label>
+          <span>幅 (px)</span>
+          <input type="number" id="widthInput" min="1" step="1">
+        </label>
+        <label>
+          <span>高さ (px)</span>
+          <input type="number" id="heightInput" min="1" step="1">
+        </label>
+        <label class="checkbox">
+          <input type="checkbox" id="lockRatio" checked>
+          <span>縦横比を固定</span>
+        </label>
+      </div>
+      <button id="applySize" class="primary">リサイズ &amp; 寸法線生成</button>
+    </section>
+
+    <section class="card" id="preview" hidden>
+      <h2>3. プレビュー &amp; ダウンロード</h2>
+      <div class="preview-wrapper">
+        <div>
+          <h3>リサイズ後の SVG</h3>
+          <div id="resizedPreview" class="preview-box"></div>
+        </div>
+        <div>
+          <h3>寸法線付き SVG</h3>
+          <div id="dimensionedPreview" class="preview-box"></div>
+        </div>
+      </div>
+      <div class="actions">
+        <button id="downloadResized" disabled>リサイズ後の SVG を保存</button>
+        <button id="downloadDimensioned" class="primary" disabled>寸法線付き SVG を保存</button>
+      </div>
+    </section>
+  </main>
+
+  <footer>
+    <p>すべてブラウザ内で処理されるため、アップロードしたデータは外部に送信されません。</p>
+  </footer>
+
+  <script src="script.js"></script>
+</body>
+</html>
