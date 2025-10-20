@@ -11,7 +11,7 @@
       <header class="hero">
         <h1>SVGリサイズ &amp; 寸法線ジェネレーター</h1>
         <p>
-          SVGファイルを読み込み、希望のサイズにリサイズしたうえで縦横の寸法線を追加します。生成されたSVGはそのままダウンロードでき、PNGにも変換できます。
+          SVGや画像ファイルを読み込み、希望のサイズにリサイズしたうえで縦横の寸法線を追加します。生成されたSVGはそのままダウンロードでき、PNGにも変換できます。
         </p>
       </header>
 
@@ -19,11 +19,11 @@
         <h2>1. SVGを読み込む</h2>
         <div class="input-area">
           <label class="file-input">
-            <span>SVGファイルを選択</span>
-            <input type="file" id="fileInput" accept=".svg" />
+            <span>SVG/画像ファイルを選択</span>
+            <input type="file" id="fileInput" accept=".svg,.png,.jpg,.jpeg,.webp,.gif" />
           </label>
-          <div id="dropZone" class="drop-zone" aria-label="SVGファイルをドラッグ&ドロップ">
-            ここにSVGファイルをドラッグ&ドロップ
+          <div id="dropZone" class="drop-zone" aria-label="SVGまたは画像ファイルをドラッグ&ドロップ">
+            ここにSVGまたは画像ファイルをドラッグ&ドロップ
           </div>
           <label class="textarea-label" for="svgInput">またはSVGコードを直接貼り付け</label>
           <textarea id="svgInput" rows="10" placeholder="&lt;svg&gt;...&lt;/svg&gt;"></textarea>
@@ -34,12 +34,19 @@
         <h2>2. リサイズ設定</h2>
         <div class="controls">
           <div class="control-group">
-            <label for="widthInput">幅 (px)</label>
-            <input type="number" id="widthInput" min="1" step="1" />
+            <label for="widthInput">幅</label>
+            <input type="number" id="widthInput" min="0.1" step="0.1" />
           </div>
           <div class="control-group">
-            <label for="heightInput">高さ (px)</label>
-            <input type="number" id="heightInput" min="1" step="1" />
+            <label for="heightInput">高さ</label>
+            <input type="number" id="heightInput" min="0.1" step="0.1" />
+          </div>
+          <div class="control-group">
+            <label for="unitSelect">単位</label>
+            <select id="unitSelect">
+              <option value="px" selected>px</option>
+              <option value="mm">mm</option>
+            </select>
           </div>
           <label class="checkbox">
             <input type="checkbox" id="lockRatio" checked />
@@ -48,7 +55,7 @@
           <button id="resizeButton" class="primary">リサイズして寸法線を追加</button>
         </div>
         <p class="hint">
-          数値を入力するとリアルタイムで寸法が反映されます。アスペクト比を維持する場合は、幅または高さを入力するだけで自動計算されます。
+          数値を入力するとリアルタイムで寸法が反映されます。単位はpxとmmから選択でき、アスペクト比を維持する場合は、幅または高さを入力するだけで自動計算されます。
         </p>
       </section>
 
