@@ -9,6 +9,9 @@
   const unitSelect = document.getElementById('unitSelect');
   const lockRatio = document.getElementById('lockRatio');
   const resizeButton = document.getElementById('resizeButton');
+  const backgroundColorInput = document.getElementById('backgroundColor');
+  const transparentBackgroundCheckbox = document.getElementById('transparentBackground');
+  const showDimensionsCheckbox = document.getElementById('showDimensions');
   const previewArea = document.getElementById('previewArea');
   const messageEl = document.getElementById('message');
   const downloadSvgLink = document.getElementById('downloadSvg');
@@ -161,7 +164,75 @@
     return Number.parseFloat(value.toFixed(2)).toString();
   }
 
-  function generateResizedSvg(svgEl, targetWidthPx, targetHeightPx, unit) {
+  function normalizeHexColor(value) {
+    if (typeof value !== 'string') return null;
+    const hex = value.trim().replace(/^#/, '');
+    if (hex.length === 3) {
+      return `#${hex
+        .split('')
+        .map((char) => char + char)
+        .join('')}`;
+    }
+    if (hex.length === 6) {
+      return `#${hex}`;
+    }
+    return null;
+  }
+
+  function hexToRgb(hex) {
+    const normalized = normalizeHexColor(hex);
+    if (!normalized) return null;
+    const value = normalized.replace('#', '');
+    const bigint = Number.parseInt(value, 16);
+    if (!Number.isFinite(bigint)) return null;
+    return {
+      r: (bigint >> 16) & 255,
+      g: (bigint >> 8) & 255,
+      b: bigint & 255,
+    };
+  }
+
+  function relativeLuminance({ r, g, b }) {
+    const toLinear = (channel) => {
+      const normalized = channel / 255;
+      return normalized <= 0.03928
+        ? normalized / 12.92
+        : Math.pow((normalized + 0.055) / 1.055, 2.4);
+    };
+    const linearR = toLinear(r);
+    const linearG = toLinear(g);
+    const linearB = toLinear(b);
+    return 0.2126 * linearR + 0.7152 * linearG + 0.0722 * linearB;
+  }
+
+  function getDimensionColors(options = {}) {
+    const { transparentBackground = false, backgroundColor } = options;
+    const defaultStroke = '#374151';
+    const defaultText = '#111827';
+
+    if (transparentBackground) {
+      return { stroke: defaultStroke, text: defaultText };
+    }
+
+    const rgb = hexToRgb(backgroundColor);
+    if (!rgb) {
+      return { stroke: defaultStroke, text: defaultText };
+    }
+
+    const luminance = relativeLuminance(rgb);
+    if (luminance < 0.4) {
+      return { stroke: '#f9fafb', text: '#f9fafb' };
+    }
+
+    return { stroke: defaultStroke, text: defaultText };
+  }
+
+  function generateResizedSvg(svgEl, targetWidthPx, targetHeightPx, unit, options = {}) {
+    const {
+      includeDimensions = true,
+      backgroundColor = '#ffffff',
+      transparentBackground = false,
+    } = options;
     const metrics = getMetrics(svgEl);
     const viewBox = metrics.viewBox;
     const serializer = new XMLSerializer();
@@ -213,18 +284,26 @@
 
     const markerIdBase = 'dimension-arrow-marker';
 
-    const defs = `
+    const dimensionColors = getDimensionColors({
+      transparentBackground,
+      backgroundColor,
+    });
+
+    const defs = includeDimensions
+      ? `
       <defs data-generated-by="dimension-overlay">
         <marker id="${markerIdBase}-start" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto" markerUnits="strokeWidth">
-          <path d="M6 3L0 6V0L6 3Z" fill="#374151"></path>
+          <path d="M6 3L0 6V0L6 3Z" fill="${dimensionColors.stroke}"></path>
         </marker>
         <marker id="${markerIdBase}-end" markerWidth="8" markerHeight="8" refX="0" refY="3" orient="auto" markerUnits="strokeWidth">
-          <path d="M0 3L6 6V0L0 3Z" fill="#374151"></path>
+          <path d="M0 3L6 6V0L0 3Z" fill="${dimensionColors.stroke}"></path>
         </marker>
-      </defs>`;
+      </defs>`
+      : '';
 
-    const dimensionLines = `
-      <g data-generated-by="dimension-overlay" fill="none" stroke="#374151" stroke-width="${strokeWidth}" stroke-linecap="round">
+    const dimensionLines = includeDimensions
+      ? `
+      <g data-generated-by="dimension-overlay" fill="none" stroke="${dimensionColors.stroke}" stroke-width="${strokeWidth}" stroke-linecap="round">
         <line x1="${viewBox.minX}" y1="${horizontalY}" x2="${viewBox.minX + viewBox.width}" y2="${horizontalY}" marker-start="url(#${markerIdBase}-start)" marker-end="url(#${markerIdBase}-end)"></line>
         <line x1="${verticalX}" y1="${viewBox.minY}" x2="${verticalX}" y2="${viewBox.minY + viewBox.height}" marker-start="url(#${markerIdBase}-start)" marker-end="url(#${markerIdBase}-end)"></line>
         <line x1="${viewBox.minX}" y1="${viewBox.minY}" x2="${viewBox.minX}" y2="${horizontalY}" stroke-dasharray="${strokeWidth * 2}"></line>
@@ -235,7 +314,8 @@
         <line x1="${viewBox.minX + viewBox.width}" y1="${horizontalY}" x2="${viewBox.minX + viewBox.width}" y2="${horizontalY + tickSize}"></line>
         <line x1="${verticalX}" y1="${viewBox.minY}" x2="${verticalX + tickSize}" y2="${viewBox.minY}"></line>
         <line x1="${verticalX}" y1="${viewBox.minY + viewBox.height}" x2="${verticalX + tickSize}" y2="${viewBox.minY + viewBox.height}"></line>
-      </g>`;
+      </g>`
+      : '';
 
     const conversion = getConversion(unit);
     const displayWidth = conversion.fromPx(targetWidthPx);
@@ -243,18 +323,25 @@
     const unitLabel = conversion.label;
     const unitSuffix = conversion.suffix;
 
-    const labels = `
-      <g data-generated-by="dimension-overlay" fill="#111827" font-size="${fontSize}" font-weight="600" font-family="'Segoe UI', 'Hiragino Sans', 'Yu Gothic', sans-serif">
+    const labels = includeDimensions
+      ? `
+      <g data-generated-by="dimension-overlay" fill="${dimensionColors.text}" font-size="${fontSize}" font-weight="600" font-family="'Segoe UI', 'Hiragino Sans', 'Yu Gothic', sans-serif">
         <text x="${viewBox.minX + viewBox.width / 2}" y="${horizontalLabelY}" text-anchor="middle" dominant-baseline="middle">幅 ${formatNumber(displayWidth)}${unitLabel}</text>
         <text x="${verticalLabelX}" y="${viewBox.minY + viewBox.height / 2}" text-anchor="middle" dominant-baseline="middle" transform="rotate(-90 ${verticalLabelX} ${viewBox.minY + viewBox.height / 2})">高さ ${formatNumber(displayHeight)}${unitLabel}</text>
-      </g>`;
+      </g>`
+      : '';
 
     const widthAttr = `${formatNumber(displayWidth)}${unitSuffix}`;
     const heightAttr = `${formatNumber(displayHeight)}${unitSuffix}`;
 
+    const backgroundRect = transparentBackground
+      ? ''
+      : `<rect data-generated-by="dimension-overlay" x="${finalViewBox.minX}" y="${finalViewBox.minY}" width="${finalViewBox.width}" height="${finalViewBox.height}" fill="${backgroundColor}"></rect>`;
+
     const svgString = `
       <svg ${nsAttrString} width="${widthAttr}" height="${heightAttr}" viewBox="${finalViewBox.minX} ${finalViewBox.minY} ${finalViewBox.width} ${finalViewBox.height}">
         ${defs}
+        ${backgroundRect}
         <g>
           ${childMarkup}
         </g>
@@ -304,10 +391,13 @@
     image.src = url;
   }
 
-  function performResize() {
+  function performResize(options = {}) {
+    const { silent = false } = options;
     const svgText = svgInput.value.trim();
     if (!svgText) {
-      setMessage('SVGコードを入力するかファイルを読み込んでください。', true);
+      if (!silent) {
+        setMessage('SVGコードを入力するかファイルを読み込んでください。', true);
+      }
       return;
     }
 
@@ -315,7 +405,9 @@
     const heightValue = parsePositiveNumber(heightInput.value);
 
     if (!widthValue || !heightValue) {
-      setMessage('幅・高さには0より大きい数値を入力してください。', true);
+      if (!silent) {
+        setMessage('幅・高さには0より大きい数値を入力してください。', true);
+      }
       return;
     }
 
@@ -325,15 +417,25 @@
 
     try {
       const svgEl = parseSvg(svgText);
-      const svgString = generateResizedSvg(svgEl, targetWidthPx, targetHeightPx, unit);
+      const svgString = generateResizedSvg(svgEl, targetWidthPx, targetHeightPx, unit, {
+        includeDimensions: showDimensionsCheckbox ? showDimensionsCheckbox.checked : true,
+        backgroundColor: backgroundColorInput ? backgroundColorInput.value : '#ffffff',
+        transparentBackground: transparentBackgroundCheckbox
+          ? transparentBackgroundCheckbox.checked
+          : false,
+      });
       previewArea.innerHTML = svgString;
       updateDownloads(svgString, targetWidthPx, targetHeightPx);
-      setMessage('リサイズと寸法線の追加が完了しました。');
+      if (!silent) {
+        setMessage('リサイズと寸法線の追加が完了しました。');
+      }
       originalRatio = targetWidthPx / targetHeightPx;
       lastKnownDimensionsPx = { width: targetWidthPx, height: targetHeightPx };
     } catch (error) {
       console.error(error);
-      setMessage(error.message || '処理中にエラーが発生しました。', true);
+      if (!silent) {
+        setMessage(error.message || '処理中にエラーが発生しました。', true);
+      }
       previewArea.innerHTML = '';
       downloadSvgLink.setAttribute('aria-disabled', 'true');
       downloadSvgLink.removeAttribute('href');
@@ -450,6 +552,15 @@
     performResize();
   });
 
+  function refreshPreviewIfReady() {
+    const svgText = svgInput.value.trim();
+    if (!svgText) return;
+    const widthValue = parsePositiveNumber(widthInput.value);
+    const heightValue = parsePositiveNumber(heightInput.value);
+    if (!widthValue || !heightValue) return;
+    performResize({ silent: true });
+  }
+
   widthInput.addEventListener('input', () => {
     const unit = unitSelect.value;
     const widthValue = parsePositiveNumber(widthInput.value);
@@ -533,6 +644,42 @@
       }
 
       lastSelectedUnit = newUnit;
+    });
+  }
+
+  if (backgroundColorInput) {
+    backgroundColorInput.addEventListener('input', () => {
+      if (transparentBackgroundCheckbox && transparentBackgroundCheckbox.checked) {
+        return;
+      }
+      refreshPreviewIfReady();
+    });
+  }
+
+  if (transparentBackgroundCheckbox) {
+    const updateBackgroundControlState = () => {
+      const isTransparent = transparentBackgroundCheckbox.checked;
+      if (backgroundColorInput) {
+        backgroundColorInput.disabled = isTransparent;
+        if (isTransparent) {
+          backgroundColorInput.setAttribute('aria-disabled', 'true');
+        } else {
+          backgroundColorInput.removeAttribute('aria-disabled');
+        }
+      }
+    };
+
+    transparentBackgroundCheckbox.addEventListener('change', () => {
+      updateBackgroundControlState();
+      refreshPreviewIfReady();
+    });
+
+    updateBackgroundControlState();
+  }
+
+  if (showDimensionsCheckbox) {
+    showDimensionsCheckbox.addEventListener('change', () => {
+      refreshPreviewIfReady();
     });
   }
 

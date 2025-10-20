@@ -48,9 +48,21 @@
               <option value="mm">mm</option>
             </select>
           </div>
+          <div class="control-group">
+            <label for="backgroundColor">背景色</label>
+            <input type="color" id="backgroundColor" value="#ffffff" />
+          </div>
           <label class="checkbox">
             <input type="checkbox" id="lockRatio" checked />
             アスペクト比を維持
+          </label>
+          <label class="checkbox">
+            <input type="checkbox" id="transparentBackground" />
+            背景を透過
+          </label>
+          <label class="checkbox">
+            <input type="checkbox" id="showDimensions" checked />
+            寸法線を表示
           </label>
           <button id="resizeButton" class="primary">リサイズして寸法線を追加</button>
         </div>
