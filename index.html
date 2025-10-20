@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>SVG リサイズ & 寸法線ツール</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <header class="site-header">
+    <h1>SVG リサイズ &amp; 寸法線ツール</h1>
+    <p>SVG ファイルを読み込んで任意のサイズに変更し、寸法線付きの SVG をダウンロードできます。</p>
+  </header>
+
+  <main class="layout">
+    <section class="panel inputs" aria-labelledby="input-title">
+      <h2 id="input-title">SVG 読み込み &amp; 設定</h2>
+      <label class="field">
+        <span>SVG ファイル</span>
+        <input type="file" id="svg-file" accept="image/svg+xml">
+      </label>
+
+      <div class="field-group">
+        <label class="field">
+          <span>幅 (px)</span>
+          <input type="number" id="width-input" min="1" step="1">
+        </label>
+        <label class="field">
+          <span>高さ (px)</span>
+          <input type="number" id="height-input" min="1" step="1">
+        </label>
+      </div>
+
+      <label class="field checkbox">
+        <input type="checkbox" id="lock-aspect" checked>
+        <span>縦横比を維持する</span>
+      </label>
+
+      <div class="actions">
+        <button id="apply-resize" disabled>リサイズを適用</button>
+        <button id="download-svg" disabled>寸法線付き SVG をダウンロード</button>
+      </div>
+      <p class="note" id="status-text">SVG ファイルを選択してください。</p>
+    </section>
+
+    <section class="panel previews" aria-labelledby="preview-title">
+      <h2 id="preview-title">プレビュー</h2>
+      <div class="preview-wrapper">
+        <div>
+          <h3>オリジナル</h3>
+          <div id="original-preview" class="preview-box" aria-live="polite"></div>
+        </div>
+        <div>
+          <h3>リサイズ + 寸法線</h3>
+          <div id="resized-preview" class="preview-box" aria-live="polite"></div>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer class="site-footer">
+    <p>&copy; 2024 SVG Resizer</p>
+  </footer>
+
+  <template id="dimension-template">
+    <g id="dimension-lines" font-family="'Noto Sans JP', sans-serif" font-size="14">
+      <defs>
+        <marker id="arrow" viewBox="0 0 10 10" refX="5" refY="5" markerWidth="6" markerHeight="6" orient="auto">
+          <path d="M 0 0 L 10 5 L 0 10 z" fill="currentColor"></path>
+        </marker>
+      </defs>
+      <line id="width-line" stroke="#ff6b6b" stroke-width="2" marker-start="url(#arrow)" marker-end="url(#arrow)"></line>
+      <text id="width-label" fill="#ff6b6b" text-anchor="middle" dominant-baseline="middle"></text>
+      <line id="height-line" stroke="#1f7aec" stroke-width="2" marker-start="url(#arrow)" marker-end="url(#arrow)"></line>
+      <text id="height-label" fill="#1f7aec" text-anchor="middle" dominant-baseline="middle"></text>
+    </g>
+  </template>
+
+  <script src="script.js"></script>
+</body>
+</html>
