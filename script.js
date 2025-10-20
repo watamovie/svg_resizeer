@@ -12,10 +12,18 @@
   const backgroundColorInput = document.getElementById('backgroundColor');
   const transparentBackgroundCheckbox = document.getElementById('transparentBackground');
   const showDimensionsCheckbox = document.getElementById('showDimensions');
+  const showDimensionLabelsCheckbox = document.getElementById('showDimensionLabels');
+  const roundDimensionValuesCheckbox = document.getElementById('roundDimensionValues');
   const dimensionFontSizeSlider = document.getElementById('dimensionFontSize');
   const dimensionFontSizeValue = document.getElementById('dimensionFontSizeValue');
   const dimensionFontSizeGroup = dimensionFontSizeSlider
     ? dimensionFontSizeSlider.closest('.control-group')
+    : null;
+  const showDimensionLabelsControl = showDimensionLabelsCheckbox
+    ? showDimensionLabelsCheckbox.closest('.checkbox')
+    : null;
+  const roundDimensionValuesControl = roundDimensionValuesCheckbox
+    ? roundDimensionValuesCheckbox.closest('.checkbox')
     : null;
   const previewArea = document.getElementById('previewArea');
   const messageEl = document.getElementById('message');
@@ -141,6 +149,15 @@
       return null;
     }
     return parsed;
+  }
+
+  function formatDimensionDisplay(value, options = {}) {
+    const { round = false } = options;
+    if (!Number.isFinite(value)) return '';
+    if (round) {
+      return Math.round(value).toString();
+    }
+    return formatNumber(value);
   }
 
   function getCurrentDimensionsPx(unit = unitSelect.value) {
@@ -299,6 +316,8 @@
   function generateResizedSvg(svgEl, targetWidthPx, targetHeightPx, unit, options = {}) {
     const {
       includeDimensions = true,
+      showDimensionLabels = true,
+      roundDimensionDisplay = false,
       backgroundColor = '#ffffff',
       transparentBackground = false,
       dimensionTextScale = 1,
@@ -400,12 +419,20 @@
     const displayHeight = conversion.fromPx(targetHeightPx);
     const unitLabel = conversion.label;
     const unitSuffix = conversion.suffix;
+    const formattedDisplayWidth = formatDimensionDisplay(displayWidth, {
+      round: roundDimensionDisplay,
+    });
+    const formattedDisplayHeight = formatDimensionDisplay(displayHeight, {
+      round: roundDimensionDisplay,
+    });
+    const widthLabelText = `${showDimensionLabels ? '幅 ' : ''}${formattedDisplayWidth}${unitLabel}`;
+    const heightLabelText = `${showDimensionLabels ? '高さ ' : ''}${formattedDisplayHeight}${unitLabel}`;
 
     const labels = includeDimensions
       ? `
       <g data-generated-by="dimension-overlay" fill="${dimensionColors.text}" font-size="${fontSize}" font-weight="600" font-family="'Segoe UI', 'Hiragino Sans', 'Yu Gothic', sans-serif">
-        <text x="${viewBox.minX + viewBox.width / 2}" y="${horizontalLabelY}" text-anchor="middle" dominant-baseline="text-before-edge">幅 ${formatNumber(displayWidth)}${unitLabel}</text>
-        <text x="${verticalLabelX}" y="${viewBox.minY + viewBox.height / 2}" text-anchor="middle" dominant-baseline="middle" transform="rotate(-90 ${verticalLabelX} ${viewBox.minY + viewBox.height / 2})">高さ ${formatNumber(displayHeight)}${unitLabel}</text>
+        <text x="${viewBox.minX + viewBox.width / 2}" y="${horizontalLabelY}" text-anchor="middle" dominant-baseline="text-before-edge">${widthLabelText}</text>
+        <text x="${verticalLabelX}" y="${viewBox.minY + viewBox.height / 2}" text-anchor="middle" dominant-baseline="middle" transform="rotate(-90 ${verticalLabelX} ${viewBox.minY + viewBox.height / 2})">${heightLabelText}</text>
       </g>`
       : '';
 
@@ -497,6 +524,12 @@
       const svgEl = parseSvg(svgText);
       const svgString = generateResizedSvg(svgEl, targetWidthPx, targetHeightPx, unit, {
         includeDimensions: showDimensionsCheckbox ? showDimensionsCheckbox.checked : true,
+        showDimensionLabels: showDimensionLabelsCheckbox
+          ? showDimensionLabelsCheckbox.checked
+          : true,
+        roundDimensionDisplay: roundDimensionValuesCheckbox
+          ? roundDimensionValuesCheckbox.checked
+          : false,
         backgroundColor: backgroundColorInput ? backgroundColorInput.value : '#ffffff',
         transparentBackground: transparentBackgroundCheckbox
           ? transparentBackgroundCheckbox.checked
@@ -647,6 +680,19 @@
     dimensionFontSizeValue.textContent = `${dimensionFontSizeSlider.value}%`;
   };
 
+  function setCheckboxControlState(checkbox, wrapper, enabled) {
+    if (!checkbox) return;
+    checkbox.disabled = !enabled;
+    if (enabled) {
+      checkbox.removeAttribute('aria-disabled');
+    } else {
+      checkbox.setAttribute('aria-disabled', 'true');
+    }
+    if (wrapper) {
+      wrapper.classList.toggle('is-disabled', !enabled);
+    }
+  }
+
   if (dimensionFontSizeSlider) {
     dimensionFontSizeSlider.addEventListener('input', () => {
       updateDimensionFontSizeValue();
@@ -656,17 +702,28 @@
   }
 
   const updateDimensionControlsState = () => {
-    if (!dimensionFontSizeSlider) return;
     const enabled = showDimensionsCheckbox ? showDimensionsCheckbox.checked : true;
-    dimensionFontSizeSlider.disabled = !enabled;
-    if (enabled) {
-      dimensionFontSizeSlider.removeAttribute('aria-disabled');
-    } else {
-      dimensionFontSizeSlider.setAttribute('aria-disabled', 'true');
+    if (dimensionFontSizeSlider) {
+      dimensionFontSizeSlider.disabled = !enabled;
+      if (enabled) {
+        dimensionFontSizeSlider.removeAttribute('aria-disabled');
+      } else {
+        dimensionFontSizeSlider.setAttribute('aria-disabled', 'true');
+      }
     }
     if (dimensionFontSizeGroup) {
       dimensionFontSizeGroup.classList.toggle('is-disabled', !enabled);
     }
+    setCheckboxControlState(
+      showDimensionLabelsCheckbox,
+      showDimensionLabelsControl,
+      enabled
+    );
+    setCheckboxControlState(
+      roundDimensionValuesCheckbox,
+      roundDimensionValuesControl,
+      enabled
+    );
   };
 
   widthInput.addEventListener('input', () => {
@@ -793,6 +850,18 @@
     updateDimensionControlsState();
   } else {
     updateDimensionControlsState();
+  }
+
+  if (showDimensionLabelsCheckbox) {
+    showDimensionLabelsCheckbox.addEventListener('change', () => {
+      refreshPreviewIfReady();
+    });
+  }
+
+  if (roundDimensionValuesCheckbox) {
+    roundDimensionValuesCheckbox.addEventListener('change', () => {
+      refreshPreviewIfReady();
+    });
   }
 
   svgInput.addEventListener('input', () => {

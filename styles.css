@@ -299,6 +299,19 @@ textarea:focus {
   transition: border 0.2s ease, background 0.2s ease, color 0.2s ease;
 }
 
+.checkbox.is-disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.checkbox.is-disabled:hover {
+  border-color: var(--border);
+}
+
+.checkbox.is-disabled input {
+  pointer-events: none;
+}
+
 .checkbox:hover {
   border-color: var(--accent);
 }
