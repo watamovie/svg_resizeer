@@ -152,6 +152,16 @@ textarea:focus {
   font-size: 1rem;
 }
 
+.control-group input[type="color"] {
+  width: 64px;
+  height: 40px;
+  padding: 0;
+  border-radius: 0.5rem;
+  border: 1px solid var(--border);
+  background: #fff;
+  cursor: pointer;
+}
+
 .control-group select {
   width: 120px;
   padding: 0.5rem 0.75rem;
@@ -216,7 +226,10 @@ textarea:focus {
   border: 1px dashed var(--border);
   border-radius: 0.8rem;
   padding: 1rem;
-  background: #fff;
+  background:
+    conic-gradient(#e2e8f0 0 25%, transparent 0 50%) 0 0 / 24px 24px,
+    conic-gradient(#e2e8f0 0 25%, transparent 0 50%) 12px 12px / 24px 24px,
+    #fff;
   display: flex;
   justify-content: center;
   align-items: center;
