@@ -36,6 +36,7 @@
   let activeObjectUrls = [];
   let lastKnownDimensionsPx = { width: null, height: null };
   let lastSelectedUnit = unitSelect ? unitSelect.value : 'px';
+  let measurementContainer = null;
 
   function setMessage(text, isError = false) {
     messageEl.textContent = text;
@@ -57,6 +58,56 @@
 
   function fromPx(value, unit = unitSelect.value) {
     return getConversion(unit).fromPx(value);
+  }
+
+  function ensureMeasurementContainer() {
+    if (!measurementContainer) {
+      measurementContainer = document.createElement('div');
+      measurementContainer.setAttribute('aria-hidden', 'true');
+      measurementContainer.style.position = 'fixed';
+      measurementContainer.style.width = '0';
+      measurementContainer.style.height = '0';
+      measurementContainer.style.overflow = 'hidden';
+      measurementContainer.style.opacity = '0';
+      measurementContainer.style.pointerEvents = 'none';
+      measurementContainer.style.zIndex = '-1';
+      document.body.appendChild(measurementContainer);
+    }
+    return measurementContainer;
+  }
+
+  function getContentBounds(svgEl) {
+    if (!svgEl) return null;
+    const container = ensureMeasurementContainer();
+    const clone = svgEl.cloneNode(true);
+    clone.removeAttribute('width');
+    clone.removeAttribute('height');
+    if (!clone.hasAttribute('xmlns')) {
+      clone.setAttribute('xmlns', 'http://www.w3.org/2000/svg');
+    }
+    container.appendChild(clone);
+
+    let bbox = null;
+    try {
+      if (typeof clone.getBBox === 'function') {
+        bbox = clone.getBBox();
+      }
+    } catch (error) {
+      bbox = null;
+    } finally {
+      container.removeChild(clone);
+    }
+
+    if (
+      bbox &&
+      Number.isFinite(bbox.x) &&
+      Number.isFinite(bbox.y) &&
+      Number.isFinite(bbox.width) &&
+      Number.isFinite(bbox.height)
+    ) {
+      return bbox;
+    }
+    return null;
   }
 
   function parseLength(value) {
@@ -133,13 +184,26 @@
       }
     }
 
+    const contentBounds = getContentBounds(svgEl);
+    if (contentBounds && contentBounds.width > 0 && contentBounds.height > 0) {
+      viewBox = {
+        minX: contentBounds.x,
+        minY: contentBounds.y,
+        width: contentBounds.width,
+        height: contentBounds.height,
+      };
+      width = contentBounds.width;
+      height = contentBounds.height;
+    }
+
     if (!viewBox) {
       if (!width || !height) {
         throw new Error('幅・高さを取得できません。viewBoxまたはwidth/height属性を指定してください。');
       }
       viewBox = { minX: 0, minY: 0, width, height };
-      svgEl.setAttribute('viewBox', `${viewBox.minX} ${viewBox.minY} ${viewBox.width} ${viewBox.height}`);
     }
+
+    svgEl.setAttribute('viewBox', `${viewBox.minX} ${viewBox.minY} ${viewBox.width} ${viewBox.height}`);
 
     return { width, height, viewBox };
   }
