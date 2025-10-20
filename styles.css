@@ -152,6 +152,15 @@ textarea:focus {
   font-size: 1rem;
 }
 
+.control-group select {
+  width: 120px;
+  padding: 0.5rem 0.75rem;
+  border-radius: 0.5rem;
+  border: 1px solid var(--border);
+  font-size: 1rem;
+  background: #fff;
+}
+
 .checkbox {
   display: flex;
   align-items: center;
