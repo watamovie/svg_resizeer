@@ -39,6 +39,12 @@
   const resizeButton = document.getElementById('resizeButton');
   const backgroundColorInput = document.getElementById('backgroundColor');
   const transparentBackgroundCheckbox = document.getElementById('transparentBackground');
+  const applyFillColorCheckbox = document.getElementById('applyFillColor');
+  const fillColorInput = document.getElementById('fillColor');
+  const fillColorGroup = fillColorInput
+    ? fillColorInput.closest('.control-group')
+    : document.getElementById('fillColorGroup');
+  const hideCanvasSizedShapesCheckbox = document.getElementById('hideCanvasSizedShapes');
   const showDimensionsCheckbox = document.getElementById('showDimensions');
   const showDimensionLabelsCheckbox = document.getElementById('showDimensionLabels');
   const roundDimensionValuesCheckbox = document.getElementById('roundDimensionValues');
@@ -376,6 +382,110 @@
     return { stroke: defaultStroke, text: defaultText };
   }
 
+  function applyFillColorToShapes(svgEl, color) {
+    if (!svgEl || !color) return;
+    const targetElements = svgEl.querySelectorAll(
+      'path, rect, circle, ellipse, polygon, polyline, use'
+    );
+    targetElements.forEach((element) => {
+      element.setAttribute('fill', color);
+      if (element.style && typeof element.style.setProperty === 'function') {
+        try {
+          element.style.setProperty('fill', color);
+        } catch {
+          /* noop */
+        }
+      }
+    });
+  }
+
+  function hideCanvasSizedElements(svgEl, viewBox) {
+    if (!svgEl || !viewBox) return;
+
+    const measurementContainer = ensureMeasurementContainer();
+    const measurementSvg = svgEl.cloneNode(true);
+    measurementSvg.removeAttribute('width');
+    measurementSvg.removeAttribute('height');
+    measurementSvg.setAttribute(
+      'viewBox',
+      `${viewBox.minX} ${viewBox.minY} ${viewBox.width} ${viewBox.height}`
+    );
+
+    const shapes = new Set([
+      'rect',
+      'path',
+      'polygon',
+      'polyline',
+      'circle',
+      'ellipse',
+      'image',
+      'use',
+    ]);
+
+    const tolerance = Math.max(Math.max(viewBox.width, viewBox.height) * 0.002, 0.5);
+    const isApproxEqual = (a, b) => {
+      const diff = Math.abs(a - b);
+      if (diff <= tolerance) return true;
+      const relative = Math.max(Math.abs(a), Math.abs(b)) * 0.001;
+      return diff <= relative;
+    };
+
+    const originalElements = Array.from(svgEl.querySelectorAll('*'));
+    let measurementElements = [];
+
+    try {
+      measurementContainer.appendChild(measurementSvg);
+      measurementElements = Array.from(measurementSvg.querySelectorAll('*'));
+    } catch {
+      measurementElements = [];
+    }
+
+    measurementElements.forEach((element, index) => {
+      const tagName = element.tagName ? element.tagName.toLowerCase() : '';
+      if (!shapes.has(tagName)) {
+        return;
+      }
+      if (typeof element.getBBox !== 'function') {
+        return;
+      }
+
+      let bbox = null;
+      try {
+        bbox = element.getBBox();
+      } catch {
+        bbox = null;
+      }
+
+      if (
+        !bbox ||
+        !Number.isFinite(bbox.x) ||
+        !Number.isFinite(bbox.y) ||
+        !Number.isFinite(bbox.width) ||
+        !Number.isFinite(bbox.height) ||
+        bbox.width <= 0 ||
+        bbox.height <= 0
+      ) {
+        return;
+      }
+
+      if (
+        isApproxEqual(bbox.x, viewBox.minX) &&
+        isApproxEqual(bbox.y, viewBox.minY) &&
+        isApproxEqual(bbox.width, viewBox.width) &&
+        isApproxEqual(bbox.height, viewBox.height)
+      ) {
+        const originalElement = originalElements[index];
+        if (originalElement && originalElement.parentNode) {
+          originalElement.remove();
+        }
+      }
+    });
+
+    if (measurementSvg.parentNode === measurementContainer) {
+      measurementContainer.removeChild(measurementSvg);
+    }
+  }
+
   function generateResizedSvg(svgEl, targetWidthPx, targetHeightPx, unit, options = {}) {
     const {
       includeDimensions = true,
@@ -387,6 +497,9 @@
       showDrillHoles = false,
       drillHoleOffsetMm = 20,
       drillHoleDiameterMm = 10,
+      hideCanvasSizedShapes = false,
+      applyFillColor = false,
+      fillColor = null,
     } = options;
     const metrics = getMetrics(svgEl);
     const viewBox = metrics.viewBox;
@@ -395,6 +508,16 @@
     const clone = svgEl.cloneNode(true);
     clone.removeAttribute('width');
     clone.removeAttribute('height');
+
+    if (hideCanvasSizedShapes) {
+      hideCanvasSizedElements(clone, viewBox);
+    }
+
+    const normalizedFillColor =
+      applyFillColor && fillColor ? normalizeHexColor(fillColor) : null;
+    if (normalizedFillColor) {
+      applyFillColorToShapes(clone, normalizedFillColor);
+    }
 
     const childMarkup = Array.from(clone.childNodes)
       .map((node) => serializer.serializeToString(node))
@@ -722,6 +845,13 @@
         showDrillHoles: showDrillHolesCheckbox ? showDrillHolesCheckbox.checked : false,
         drillHoleOffsetMm: drillHoleOffsetValue ?? 20,
         drillHoleDiameterMm: drillHoleDiameterValue ?? 10,
+        hideCanvasSizedShapes: hideCanvasSizedShapesCheckbox
+          ? hideCanvasSizedShapesCheckbox.checked
+          : false,
+        applyFillColor: applyFillColorCheckbox
+          ? applyFillColorCheckbox.checked
+          : false,
+        fillColor: fillColorInput ? fillColorInput.value : null,
       });
       previewArea.innerHTML = svgString;
       updateDownloads(svgString, targetWidthPx, targetHeightPx);
@@ -936,6 +1066,20 @@
     setControlGroupState(drillHoleDiameterGroup, enabled);
   };
 
+  const updateFillColorControlsState = () => {
+    const enabled = applyFillColorCheckbox ? applyFillColorCheckbox.checked : false;
+    if (fillColorGroup) {
+      setControlGroupState(fillColorGroup, enabled);
+    } else if (fillColorInput) {
+      fillColorInput.disabled = !enabled;
+      if (enabled) {
+        fillColorInput.removeAttribute('aria-disabled');
+      } else {
+        fillColorInput.setAttribute('aria-disabled', 'true');
+      }
+    }
+  };
+
   widthInput.addEventListener('input', () => {
     const unit = unitSelect.value;
     const widthValue = parsePositiveNumber(widthInput.value);
@@ -1082,6 +1226,31 @@
     updateDrillHoleControlsState();
   } else {
     updateDrillHoleControlsState();
+  }
+
+  if (applyFillColorCheckbox) {
+    applyFillColorCheckbox.addEventListener('change', () => {
+      updateFillColorControlsState();
+      refreshPreviewIfReady();
+    });
+    updateFillColorControlsState();
+  } else {
+    updateFillColorControlsState();
+  }
+
+  if (fillColorInput) {
+    fillColorInput.addEventListener('input', () => {
+      if (applyFillColorCheckbox && !applyFillColorCheckbox.checked) {
+        return;
+      }
+      refreshPreviewIfReady();
+    });
+  }
+
+  if (hideCanvasSizedShapesCheckbox) {
+    hideCanvasSizedShapesCheckbox.addEventListener('change', () => {
+      refreshPreviewIfReady();
+    });
   }
 
   if (drillHoleOffsetInput) {
