@@ -15,175 +15,123 @@
         </p>
       </header>
 
-      <nav class="stepper" aria-label="操作ステップ">
-        <button
-          type="button"
-          class="stepper-step is-active"
-          data-step-target="input"
-          aria-controls="step-input"
-        >
-          <span class="stepper-step__index">1</span>
-          <span class="stepper-step__label">読み込み</span>
-        </button>
-        <button
-          type="button"
-          class="stepper-step"
-          data-step-target="resize"
-          aria-controls="step-resize"
-        >
-          <span class="stepper-step__index">2</span>
-          <span class="stepper-step__label">リサイズ設定</span>
-        </button>
-        <button
-          type="button"
-          class="stepper-step"
-          data-step-target="preview"
-          aria-controls="step-preview"
-        >
-          <span class="stepper-step__index">3</span>
-          <span class="stepper-step__label">プレビュー</span>
-        </button>
-      </nav>
-
-      <section class="panel step-panel is-active" id="step-input" data-step="input">
-        <h2>1. SVG/画像を読み込む</h2>
-        <div class="input-area">
-          <label class="file-input">
-            <span>SVG/画像ファイルを選択</span>
-            <input type="file" id="fileInput" accept=".svg,image/*" />
-          </label>
-          <div id="dropZone" class="drop-zone" aria-label="SVGまたは画像ファイルをドラッグ&ドロップ">
-            ここにSVGまたは画像ファイルをドラッグ&ドロップ
-          </div>
-          <label class="textarea-label" for="svgInput">またはSVGコードを直接貼り付け</label>
-          <textarea id="svgInput" rows="10" placeholder="&lt;svg&gt;...&lt;/svg&gt;"></textarea>
-        </div>
-        <div class="step-actions">
-          <button
-            type="button"
-            class="step-nav-button step-nav-button--primary"
-            data-step-next="resize"
-          >
-            リサイズ設定へ進む
-          </button>
-        </div>
-      </section>
-
-      <section class="panel step-panel" id="step-resize" data-step="resize">
-        <h2>2. リサイズ設定</h2>
-        <div class="controls">
-          <div class="control-group">
-            <label for="widthInput">幅</label>
-            <input type="number" id="widthInput" min="0.1" step="0.1" />
-          </div>
-          <div class="control-group">
-            <label for="heightInput">高さ</label>
-            <input type="number" id="heightInput" min="0.1" step="0.1" />
-          </div>
-          <div class="control-group">
-            <label for="unitSelect">単位</label>
-            <select id="unitSelect">
-              <option value="mm" selected>mm</option>
-              <option value="px">px</option>
-            </select>
-          </div>
-          <div class="control-group">
-            <label for="backgroundColor">背景色</label>
-            <input type="color" id="backgroundColor" value="#ffffff" />
-          </div>
-          <label class="checkbox">
-            <input type="checkbox" id="lockRatio" checked />
-            アスペクト比を維持
-          </label>
-          <label class="checkbox">
-            <input type="checkbox" id="transparentBackground" />
-            背景を透過
-          </label>
-          <label class="checkbox">
-            <input type="checkbox" id="showDimensions" checked />
-            寸法線を表示
-          </label>
-          <label class="checkbox">
-            <input type="checkbox" id="showDimensionLabels" checked />
-            寸法ラベル（「幅」「高さ」）を表示
-          </label>
-          <label class="checkbox">
-            <input type="checkbox" id="roundDimensionValues" />
-            寸法値を整数に丸める
-          </label>
-          <label class="checkbox">
-            <input type="checkbox" id="showDrillHoles" />
-            穴あけ位置を表示
-          </label>
-          <div class="control-group" id="drillHoleOffsetGroup">
-            <label for="drillHoleOffset">穴の中心と端の距離 (mm)</label>
-            <input
-              type="number"
-              id="drillHoleOffset"
-              min="0"
-              step="0.1"
-              value="20"
-              inputmode="decimal"
-            />
-          </div>
-          <div class="control-group" id="drillHoleDiameterGroup">
-            <label for="drillHoleDiameter">穴径 (mm)</label>
-            <input
-              type="number"
-              id="drillHoleDiameter"
-              min="0.1"
-              step="0.1"
-              value="10"
-              inputmode="decimal"
-            />
-          </div>
-          <div class="control-group range-group">
-            <label for="dimensionFontSize">寸法文字サイズ</label>
-            <input
-              type="range"
-              id="dimensionFontSize"
-              min="50"
-              max="200"
-              step="10"
-              value="100"
-            />
-            <div class="range-value" aria-live="polite">
-              <span id="dimensionFontSizeValue">100%</span>
+      <div class="workspace">
+        <div class="workspace__controls">
+          <section class="panel panel--input" id="step-input">
+            <h2>SVG/画像を読み込む</h2>
+            <div class="input-area">
+              <label class="file-input">
+                <span>SVG/画像ファイルを選択</span>
+                <input type="file" id="fileInput" accept=".svg,image/*" />
+              </label>
+              <div id="dropZone" class="drop-zone" aria-label="SVGまたは画像ファイルをドラッグ&ドロップ">
+                ここにSVGまたは画像ファイルをドラッグ&ドロップ
+              </div>
+              <label class="textarea-label" for="svgInput">またはSVGコードを直接貼り付け</label>
+              <textarea id="svgInput" rows="10" placeholder="&lt;svg&gt;...&lt;/svg&gt;"></textarea>
             </div>
-          </div>
-          <button type="button" id="resizeButton" class="primary">リサイズして寸法線を追加</button>
-        </div>
-        <p class="hint">
-          数値を入力するとリアルタイムで寸法が反映されます。アスペクト比を維持する場合は、幅または高さを入力するだけで自動計算されます。
-        </p>
-        <div class="step-actions">
-          <button type="button" class="step-nav-button" data-step-prev="input">
-            読み込みに戻る
-          </button>
-          <button
-            type="button"
-            class="step-nav-button step-nav-button--primary"
-            data-step-next="preview"
-          >
-            プレビューへ進む
-          </button>
-        </div>
-      </section>
+          </section>
 
-      <section class="panel step-panel" id="step-preview" data-step="preview">
-        <h2>3. プレビュー &amp; ダウンロード</h2>
-        <div id="message" role="status" aria-live="polite"></div>
-        <div id="previewArea" class="preview" aria-label="リサイズされたSVGのプレビュー"></div>
-        <div class="downloads">
-          <a id="downloadSvg" class="button" download="resized-with-dimensions.svg" aria-disabled="true">SVGをダウンロード</a>
-          <a id="downloadPng" class="button" download="resized-with-dimensions.png" aria-disabled="true">PNGをダウンロード</a>
+          <section class="panel panel--settings" id="step-resize">
+            <h2>リサイズ設定</h2>
+            <div class="controls">
+              <div class="control-group">
+                <label for="widthInput">幅</label>
+                <input type="number" id="widthInput" min="0.1" step="0.1" />
+              </div>
+              <div class="control-group">
+                <label for="heightInput">高さ</label>
+                <input type="number" id="heightInput" min="0.1" step="0.1" />
+              </div>
+              <div class="control-group">
+                <label for="unitSelect">単位</label>
+                <select id="unitSelect">
+                  <option value="mm" selected>mm</option>
+                  <option value="px">px</option>
+                </select>
+              </div>
+              <div class="control-group">
+                <label for="backgroundColor">背景色</label>
+                <input type="color" id="backgroundColor" value="#ffffff" />
+              </div>
+              <label class="checkbox">
+                <input type="checkbox" id="lockRatio" checked />
+                アスペクト比を維持
+              </label>
+              <label class="checkbox">
+                <input type="checkbox" id="transparentBackground" />
+                背景を透過
+              </label>
+              <label class="checkbox">
+                <input type="checkbox" id="showDimensions" checked />
+                寸法線を表示
+              </label>
+              <label class="checkbox">
+                <input type="checkbox" id="showDimensionLabels" checked />
+                寸法ラベル（「幅」「高さ」）を表示
+              </label>
+              <label class="checkbox">
+                <input type="checkbox" id="roundDimensionValues" />
+                寸法値を整数に丸める
+              </label>
+              <label class="checkbox">
+                <input type="checkbox" id="showDrillHoles" />
+                穴あけ位置を表示
+              </label>
+              <div class="control-group" id="drillHoleOffsetGroup">
+                <label for="drillHoleOffset">穴の中心と端の距離 (mm)</label>
+                <input
+                  type="number"
+                  id="drillHoleOffset"
+                  min="0"
+                  step="0.1"
+                  value="20"
+                  inputmode="decimal"
+                />
+              </div>
+              <div class="control-group" id="drillHoleDiameterGroup">
+                <label for="drillHoleDiameter">穴径 (mm)</label>
+                <input
+                  type="number"
+                  id="drillHoleDiameter"
+                  min="0.1"
+                  step="0.1"
+                  value="10"
+                  inputmode="decimal"
+                />
+              </div>
+              <div class="control-group range-group">
+                <label for="dimensionFontSize">寸法文字サイズ</label>
+                <input
+                  type="range"
+                  id="dimensionFontSize"
+                  min="50"
+                  max="200"
+                  step="10"
+                  value="100"
+                />
+                <div class="range-value" aria-live="polite">
+                  <span id="dimensionFontSizeValue">100%</span>
+                </div>
+              </div>
+              <button type="button" id="resizeButton" class="primary">リサイズして寸法線を追加</button>
+            </div>
+            <p class="hint">
+              数値を入力するとリアルタイムで寸法が反映されます。アスペクト比を維持する場合は、幅または高さを入力するだけで自動計算されます。
+            </p>
+          </section>
         </div>
-        <div class="step-actions">
-          <button type="button" class="step-nav-button" data-step-prev="resize">
-            リサイズ設定に戻る
-          </button>
-        </div>
-      </section>
+
+        <section class="panel panel--preview" id="step-preview">
+          <h2>プレビュー &amp; ダウンロード</h2>
+          <div id="message" role="status" aria-live="polite"></div>
+          <div id="previewArea" class="preview" aria-label="リサイズされたSVGのプレビュー"></div>
+          <div class="downloads">
+            <a id="downloadSvg" class="button" download="resized-with-dimensions.svg" aria-disabled="true">SVGをダウンロード</a>
+            <a id="downloadPng" class="button" download="resized-with-dimensions.png" aria-disabled="true">PNGをダウンロード</a>
+          </div>
+        </section>
+      </div>
     </main>
 
     <script src="script.js" defer></script>
