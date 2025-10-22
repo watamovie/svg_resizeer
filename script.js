@@ -38,17 +38,23 @@
   const lockRatio = document.getElementById('lockRatio');
   const resizeButton = document.getElementById('resizeButton');
   const backgroundColorInput = document.getElementById('backgroundColor');
+  const overrideFillColorCheckbox = document.getElementById('overrideFillColor');
+  const fillColorInput = document.getElementById('fillColor');
   const transparentBackgroundCheckbox = document.getElementById('transparentBackground');
   const showDimensionsCheckbox = document.getElementById('showDimensions');
   const showDimensionLabelsCheckbox = document.getElementById('showDimensionLabels');
   const roundDimensionValuesCheckbox = document.getElementById('roundDimensionValues');
   const showDrillHolesCheckbox = document.getElementById('showDrillHoles');
+  const hideCanvasSizedShapesCheckbox = document.getElementById('hideCanvasSizedShapes');
   const drillHoleOffsetInput = document.getElementById('drillHoleOffset');
   const drillHoleDiameterInput = document.getElementById('drillHoleDiameter');
   const dimensionFontSizeSlider = document.getElementById('dimensionFontSize');
   const dimensionFontSizeValue = document.getElementById('dimensionFontSizeValue');
   const dimensionFontSizeGroup = dimensionFontSizeSlider
     ? dimensionFontSizeSlider.closest('.control-group')
+    : null;
+  const fillColorGroup = fillColorInput
+    ? fillColorInput.closest('.control-group')
     : null;
   const showDimensionLabelsControl = showDimensionLabelsCheckbox
     ? showDimensionLabelsCheckbox.closest('.checkbox')
@@ -387,6 +393,8 @@
       showDrillHoles = false,
       drillHoleOffsetMm = 20,
       drillHoleDiameterMm = 10,
+      hideCanvasSizedShapes = false,
+      fillColorOverride = null,
     } = options;
     const metrics = getMetrics(svgEl);
     const viewBox = metrics.viewBox;
@@ -395,6 +403,54 @@
     const clone = svgEl.cloneNode(true);
     clone.removeAttribute('width');
     clone.removeAttribute('height');
+
+    if (hideCanvasSizedShapes) {
+      const toleranceBase = Math.max(
+        Math.abs(viewBox.width),
+        Math.abs(viewBox.height),
+        1
+      );
+      const tolerance = Math.max(toleranceBase * 1e-4, 0.01);
+      const rects = clone.querySelectorAll('rect');
+      rects.forEach((rect) => {
+        if (rect.closest('defs, clipPath, mask, pattern, symbol')) {
+          return;
+        }
+        const widthValue = parseLength(rect.getAttribute('width'));
+        const heightValue = parseLength(rect.getAttribute('height'));
+        if (!Number.isFinite(widthValue) || !Number.isFinite(heightValue)) {
+          return;
+        }
+        const xValue = parseLength(rect.getAttribute('x'));
+        const yValue = parseLength(rect.getAttribute('y'));
+        const x = Number.isFinite(xValue) ? xValue : 0;
+        const y = Number.isFinite(yValue) ? yValue : 0;
+        const matchesWidth = Math.abs(widthValue - viewBox.width) <= tolerance;
+        const matchesHeight = Math.abs(heightValue - viewBox.height) <= tolerance;
+        const matchesX =
+          Math.abs(x - viewBox.minX) <= tolerance ||
+          (Math.abs(x) <= tolerance && Math.abs(viewBox.minX) <= tolerance);
+        const matchesY =
+          Math.abs(y - viewBox.minY) <= tolerance ||
+          (Math.abs(y) <= tolerance && Math.abs(viewBox.minY) <= tolerance);
+        if (matchesWidth && matchesHeight && matchesX && matchesY) {
+          rect.remove();
+        }
+      });
+    }
+
+    const normalizedFillOverride = normalizeHexColor(fillColorOverride);
+    if (normalizedFillOverride) {
+      const fillTargets = clone.querySelectorAll(
+        'path, rect, circle, ellipse, polygon, polyline'
+      );
+      fillTargets.forEach((element) => {
+        element.setAttribute('fill', normalizedFillOverride);
+        if (element.style) {
+          element.style.fill = normalizedFillOverride;
+        }
+      });
+    }
 
     const childMarkup = Array.from(clone.childNodes)
       .map((node) => serializer.serializeToString(node))
@@ -722,6 +778,15 @@
         showDrillHoles: showDrillHolesCheckbox ? showDrillHolesCheckbox.checked : false,
         drillHoleOffsetMm: drillHoleOffsetValue ?? 20,
         drillHoleDiameterMm: drillHoleDiameterValue ?? 10,
+        hideCanvasSizedShapes: hideCanvasSizedShapesCheckbox
+          ? hideCanvasSizedShapesCheckbox.checked
+          : false,
+        fillColorOverride:
+          overrideFillColorCheckbox &&
+          overrideFillColorCheckbox.checked &&
+          fillColorInput
+            ? fillColorInput.value
+            : null,
       });
       previewArea.innerHTML = svgString;
       updateDownloads(svgString, targetWidthPx, targetHeightPx);
@@ -936,6 +1001,20 @@
     setControlGroupState(drillHoleDiameterGroup, enabled);
   };
 
+  const updateFillColorControlsState = () => {
+    const enabled = overrideFillColorCheckbox ? overrideFillColorCheckbox.checked : false;
+    if (fillColorGroup) {
+      setControlGroupState(fillColorGroup, enabled);
+    } else if (fillColorInput) {
+      fillColorInput.disabled = !enabled;
+      if (enabled) {
+        fillColorInput.removeAttribute('aria-disabled');
+      } else {
+        fillColorInput.setAttribute('aria-disabled', 'true');
+      }
+    }
+  };
+
   widthInput.addEventListener('input', () => {
     const unit = unitSelect.value;
     const widthValue = parsePositiveNumber(widthInput.value);
@@ -1027,6 +1106,31 @@
       if (transparentBackgroundCheckbox && transparentBackgroundCheckbox.checked) {
         return;
       }
+      refreshPreviewIfReady();
+    });
+  }
+
+  if (overrideFillColorCheckbox) {
+    overrideFillColorCheckbox.addEventListener('change', () => {
+      updateFillColorControlsState();
+      refreshPreviewIfReady();
+    });
+    updateFillColorControlsState();
+  } else {
+    updateFillColorControlsState();
+  }
+
+  if (fillColorInput) {
+    fillColorInput.addEventListener('input', () => {
+      if (overrideFillColorCheckbox && !overrideFillColorCheckbox.checked) {
+        return;
+      }
+      refreshPreviewIfReady();
+    });
+  }
+
+  if (hideCanvasSizedShapesCheckbox) {
+    hideCanvasSizedShapesCheckbox.addEventListener('change', () => {
       refreshPreviewIfReady();
     });
   }
