@@ -38,7 +38,14 @@
   const lockRatio = document.getElementById('lockRatio');
   const resizeButton = document.getElementById('resizeButton');
   const backgroundColorInput = document.getElementById('backgroundColor');
-  const transparentBackgroundCheckbox = document.getElementById('transparentBackground');
+  const removeCanvasBackgroundCheckbox = document.getElementById(
+    'removeCanvasBackground'
+  );
+  const applyFillColorCheckbox = document.getElementById('applyFillColor');
+  const fillColorInput = document.getElementById('fillColor');
+  const transparentBackgroundCheckbox = document.getElementById(
+    'transparentBackground'
+  );
   const showDimensionsCheckbox = document.getElementById('showDimensions');
   const showDimensionLabelsCheckbox = document.getElementById('showDimensionLabels');
   const roundDimensionValuesCheckbox = document.getElementById('roundDimensionValues');
@@ -50,6 +57,9 @@
   const dimensionFontSizeGroup = dimensionFontSizeSlider
     ? dimensionFontSizeSlider.closest('.control-group')
     : null;
+  const fillColorGroup = fillColorInput
+    ? fillColorInput.closest('.control-group')
+    : document.getElementById('fillColorGroup');
   const showDimensionLabelsControl = showDimensionLabelsCheckbox
     ? showDimensionLabelsCheckbox.closest('.checkbox')
     : null;
@@ -182,6 +192,21 @@
     return number;
   }
 
+  function parseLengthWithReference(value, referenceLength) {
+    if (value == null) return null;
+    const trimmed = value.toString().trim();
+    if (!trimmed) return null;
+    if (trimmed.endsWith('%')) {
+      const numeric = Number.parseFloat(trimmed.slice(0, -1));
+      if (Number.isFinite(numeric) && Number.isFinite(referenceLength)) {
+        return (referenceLength * numeric) / 100;
+      }
+      return null;
+    }
+    const parsed = parseLength(trimmed);
+    return Number.isFinite(parsed) ? parsed : null;
+  }
+
   function parsePositiveNumber(value) {
     const parsed = Number.parseFloat(value);
     if (!Number.isFinite(parsed) || parsed <= 0) {
@@ -196,6 +221,64 @@
       return null;
     }
     return parsed;
+  }
+
+  function removeCanvasSizedBackgrounds(svgEl, metrics) {
+    if (!svgEl || !metrics || !metrics.viewBox) return;
+    const { viewBox } = metrics;
+    if (
+      !Number.isFinite(viewBox.width) ||
+      !Number.isFinite(viewBox.height)
+    ) {
+      return;
+    }
+
+    const toleranceBase = Math.max(viewBox.width, viewBox.height);
+    const tolerance = toleranceBase > 0 ? toleranceBase * 1e-3 : 0.5;
+
+    const rects = Array.from(svgEl.querySelectorAll('rect'));
+    rects.forEach((rect) => {
+      const width = parseLengthWithReference(
+        rect.getAttribute('width'),
+        viewBox.width
+      );
+      const height = parseLengthWithReference(
+        rect.getAttribute('height'),
+        viewBox.height
+      );
+
+      if (!Number.isFinite(width) || !Number.isFinite(height)) {
+        return;
+      }
+
+      if (Math.abs(width - viewBox.width) > tolerance) {
+        return;
+      }
+
+      if (Math.abs(height - viewBox.height) > tolerance) {
+        return;
+      }
+
+      const x = parseLengthWithReference(rect.getAttribute('x'), viewBox.width);
+      const y = parseLengthWithReference(rect.getAttribute('y'), viewBox.height);
+      const xValue = Number.isFinite(x) ? x : 0;
+      const yValue = Number.isFinite(y) ? y : 0;
+
+      if (Math.abs(xValue - viewBox.minX) > tolerance) {
+        return;
+      }
+
+      if (Math.abs(yValue - viewBox.minY) > tolerance) {
+        return;
+      }
+
+      const transform = rect.getAttribute('transform');
+      if (transform && transform.trim()) {
+        return;
+      }
+
+      rect.remove();
+    });
   }
 
   function clamp(value, min, max) {
@@ -341,6 +424,30 @@
     };
   }
 
+  function applyUniformFillColor(svgEl, color) {
+    if (!svgEl || !color) return;
+    const normalized = normalizeHexColor(color) || color;
+    const selectableElements = [
+      'path',
+      'rect',
+      'circle',
+      'ellipse',
+      'polygon',
+      'polyline',
+      'use',
+    ].join(', ');
+
+    const targets = svgEl.querySelectorAll(selectableElements);
+    targets.forEach((element) => {
+      element.setAttribute('fill', normalized);
+      if (element.style && typeof element.style.setProperty === 'function') {
+        element.style.setProperty('fill', normalized, 'important');
+      } else if (element.style) {
+        element.style.fill = normalized;
+      }
+    });
+  }
+
   function relativeLuminance({ r, g, b }) {
     const toLinear = (channel) => {
       const normalized = channel / 255;
@@ -387,6 +494,9 @@
       showDrillHoles = false,
       drillHoleOffsetMm = 20,
       drillHoleDiameterMm = 10,
+      removeCanvasBackground = false,
+      applyUniformFill = false,
+      uniformFillColor = '#000000',
     } = options;
     const metrics = getMetrics(svgEl);
     const viewBox = metrics.viewBox;
@@ -395,6 +505,14 @@
     const clone = svgEl.cloneNode(true);
     clone.removeAttribute('width');
     clone.removeAttribute('height');
+
+    if (removeCanvasBackground) {
+      removeCanvasSizedBackgrounds(clone, metrics);
+    }
+
+    if (applyUniformFill) {
+      applyUniformFillColor(clone, uniformFillColor);
+    }
 
     const childMarkup = Array.from(clone.childNodes)
       .map((node) => serializer.serializeToString(node))
@@ -722,6 +840,13 @@
         showDrillHoles: showDrillHolesCheckbox ? showDrillHolesCheckbox.checked : false,
         drillHoleOffsetMm: drillHoleOffsetValue ?? 20,
         drillHoleDiameterMm: drillHoleDiameterValue ?? 10,
+        removeCanvasBackground: removeCanvasBackgroundCheckbox
+          ? removeCanvasBackgroundCheckbox.checked
+          : false,
+        applyUniformFill: applyFillColorCheckbox
+          ? applyFillColorCheckbox.checked
+          : false,
+        uniformFillColor: fillColorInput ? fillColorInput.value : '#000000',
       });
       previewArea.innerHTML = svgString;
       updateDownloads(svgString, targetWidthPx, targetHeightPx);
@@ -930,6 +1055,11 @@
     );
   };
 
+  const updateFillColorControlsState = () => {
+    const enabled = applyFillColorCheckbox ? applyFillColorCheckbox.checked : false;
+    setControlGroupState(fillColorGroup, enabled);
+  };
+
   const updateDrillHoleControlsState = () => {
     const enabled = showDrillHolesCheckbox ? showDrillHolesCheckbox.checked : false;
     setControlGroupState(drillHoleOffsetGroup, enabled);
@@ -1025,6 +1155,30 @@
   if (backgroundColorInput) {
     backgroundColorInput.addEventListener('input', () => {
       if (transparentBackgroundCheckbox && transparentBackgroundCheckbox.checked) {
+        return;
+      }
+      refreshPreviewIfReady();
+    });
+  }
+
+  if (removeCanvasBackgroundCheckbox) {
+    removeCanvasBackgroundCheckbox.addEventListener('change', () => {
+      refreshPreviewIfReady();
+    });
+  }
+
+  if (applyFillColorCheckbox) {
+    applyFillColorCheckbox.addEventListener('change', () => {
+      updateFillColorControlsState();
+      refreshPreviewIfReady();
+    });
+  }
+
+  updateFillColorControlsState();
+
+  if (fillColorInput) {
+    fillColorInput.addEventListener('input', () => {
+      if (applyFillColorCheckbox && !applyFillColorCheckbox.checked) {
         return;
       }
       refreshPreviewIfReady();
