@@ -59,8 +59,74 @@
   let originalRatio = null;
   let activeObjectUrls = [];
   let lastKnownDimensionsPx = { width: null, height: null };
-  let lastSelectedUnit = unitSelect ? unitSelect.value : 'px';
+  let lastSelectedUnit = unitSelect ? unitSelect.value : 'mm';
   let measurementContainer = null;
+
+  const stepperRoot = document.querySelector('[data-stepper]');
+  const stepPanels = stepperRoot
+    ? Array.from(stepperRoot.querySelectorAll('.panel[data-step]'))
+    : [];
+  const totalSteps = stepPanels.length;
+  const stepperIndicatorsContainer = stepperRoot
+    ? stepperRoot.querySelector('[data-step-indicators]')
+    : null;
+  if (stepperIndicatorsContainer) {
+    stepperIndicatorsContainer.setAttribute('role', 'list');
+  }
+  const stepTitles = stepPanels.map((panel, index) => {
+    const dataTitle = panel.getAttribute('data-step-title');
+    if (dataTitle && dataTitle.trim()) {
+      return dataTitle.trim();
+    }
+    const heading = panel.querySelector('h2');
+    return heading ? heading.textContent.trim() : `ステップ${index + 1}`;
+  });
+  let stepperIndicators = [];
+  const mobileStepper = document.querySelector('.mobile-stepper');
+  const prevStepButton = mobileStepper
+    ? mobileStepper.querySelector('[data-direction="prev"]')
+    : null;
+  const nextStepButton = mobileStepper
+    ? mobileStepper.querySelector('[data-direction="next"]')
+    : null;
+  const mobileStepLabel = document.getElementById('mobileStepLabel');
+  const mobileStepTitle = document.getElementById('mobileStepTitle');
+  const mobileLayoutMediaQuery = window.matchMedia('(max-width: 768px)');
+  const prefersReducedMotionQuery = window.matchMedia(
+    '(prefers-reduced-motion: reduce)'
+  );
+  let currentStepIndex = 0;
+
+  if (stepperIndicatorsContainer && totalSteps > 0) {
+    stepperIndicatorsContainer.innerHTML = '';
+    stepperIndicators = stepPanels.map((panel, index) => {
+      const indicator = document.createElement('li');
+      indicator.className = 'stepper-indicator';
+      indicator.dataset.index = String(index);
+      indicator.innerHTML = `
+        <span class="stepper-indicator__step">STEP ${index + 1}</span>
+        <span class="stepper-indicator__label">${stepTitles[index]}</span>
+      `;
+      indicator.setAttribute('role', 'button');
+      indicator.setAttribute('tabindex', '0');
+      stepperIndicatorsContainer.appendChild(indicator);
+      return indicator;
+    });
+  } else if (stepperRoot) {
+    stepperIndicators = Array.from(
+      stepperRoot.querySelectorAll('.stepper-indicator')
+    );
+  }
+
+  if (stepperIndicators.length > 0) {
+    stepperIndicators.forEach((indicator, index) => {
+      if (!indicator.dataset.index) {
+        indicator.dataset.index = String(index);
+      }
+      indicator.setAttribute('role', 'button');
+      indicator.setAttribute('tabindex', '0');
+    });
+  }
 
   function setMessage(text, isError = false) {
     messageEl.textContent = text;
@@ -184,6 +250,150 @@
       return min;
     }
     return Math.min(Math.max(value, min), max);
+  }
+
+  function usingMobileStepper() {
+    return mobileLayoutMediaQuery.matches && totalSteps > 0;
+  }
+
+  function updateStepUI() {
+    if (!totalSteps) {
+      if (mobileStepper) {
+        mobileStepper.setAttribute('aria-hidden', 'true');
+      }
+      return;
+    }
+
+    currentStepIndex = clamp(currentStepIndex, 0, totalSteps - 1);
+
+    const isMobileLayout = usingMobileStepper();
+
+    stepPanels.forEach((panel, index) => {
+      const isActive = !isMobileLayout || index === currentStepIndex;
+      panel.classList.toggle('is-active', isActive);
+      if (isMobileLayout) {
+        panel.setAttribute('aria-hidden', isActive ? 'false' : 'true');
+      } else {
+        panel.removeAttribute('aria-hidden');
+      }
+    });
+
+    stepperIndicators.forEach((indicator, index) => {
+      const isActive = index === currentStepIndex;
+      indicator.classList.toggle('is-active', isActive);
+      if (isActive) {
+        indicator.setAttribute('aria-current', 'step');
+      } else {
+        indicator.removeAttribute('aria-current');
+      }
+    });
+
+    if (mobileStepper) {
+      mobileStepper.setAttribute('aria-hidden', isMobileLayout ? 'false' : 'true');
+    }
+
+    if (prevStepButton) {
+      const atFirstStep = currentStepIndex === 0;
+      prevStepButton.disabled = atFirstStep;
+      prevStepButton.setAttribute('aria-disabled', atFirstStep ? 'true' : 'false');
+    }
+
+    if (nextStepButton) {
+      const atLastStep = currentStepIndex === totalSteps - 1;
+      nextStepButton.disabled = atLastStep;
+      nextStepButton.setAttribute('aria-disabled', atLastStep ? 'true' : 'false');
+      nextStepButton.textContent = atLastStep ? '完了' : '次へ';
+    }
+
+    if (mobileStepLabel) {
+      mobileStepLabel.textContent = `ステップ ${currentStepIndex + 1} / ${totalSteps}`;
+    }
+
+    if (mobileStepTitle) {
+      mobileStepTitle.textContent = stepTitles[currentStepIndex] || '';
+    }
+  }
+
+  function scrollToActivePanel() {
+    if (!usingMobileStepper()) {
+      return;
+    }
+    const activePanel = stepPanels[currentStepIndex];
+    if (!activePanel) {
+      return;
+    }
+    const prefersReducedMotion = prefersReducedMotionQuery.matches;
+    requestAnimationFrame(() => {
+      activePanel.scrollIntoView({
+        behavior: prefersReducedMotion ? 'auto' : 'smooth',
+        block: 'start',
+      });
+    });
+  }
+
+  function goToStep(index, options = {}) {
+    if (!totalSteps) {
+      return;
+    }
+    const { scroll = true } = options;
+    const newIndex = clamp(index, 0, totalSteps - 1);
+    const hasChanged = newIndex !== currentStepIndex;
+    currentStepIndex = newIndex;
+    updateStepUI();
+    if (scroll && hasChanged) {
+      scrollToActivePanel();
+    }
+  }
+
+  const handleMobileLayoutChange = () => {
+    updateStepUI();
+    if (usingMobileStepper()) {
+      scrollToActivePanel();
+    }
+  };
+
+  if (typeof mobileLayoutMediaQuery.addEventListener === 'function') {
+    mobileLayoutMediaQuery.addEventListener('change', handleMobileLayoutChange);
+  } else if (typeof mobileLayoutMediaQuery.addListener === 'function') {
+    mobileLayoutMediaQuery.addListener(handleMobileLayoutChange);
+  }
+
+  if (prevStepButton) {
+    prevStepButton.addEventListener('click', () => {
+      goToStep(currentStepIndex - 1);
+    });
+  }
+
+  if (nextStepButton) {
+    nextStepButton.addEventListener('click', () => {
+      goToStep(currentStepIndex + 1);
+    });
+  }
+
+  if (stepperIndicators.length > 0) {
+    stepperIndicators.forEach((indicator) => {
+      indicator.addEventListener('click', () => {
+        const targetIndex = Number.parseInt(indicator.dataset.index || '', 10);
+        if (Number.isFinite(targetIndex)) {
+          goToStep(targetIndex);
+        }
+      });
+      indicator.addEventListener('keydown', (event) => {
+        if (event.key === 'Enter' || event.key === ' ') {
+          event.preventDefault();
+          const targetIndex = Number.parseInt(indicator.dataset.index || '', 10);
+          if (Number.isFinite(targetIndex)) {
+            goToStep(targetIndex);
+          }
+        }
+      });
+    });
+  }
+
+  if (totalSteps > 0) {
+    updateStepUI();
+  } else if (mobileStepper) {
+    mobileStepper.setAttribute('aria-hidden', 'true');
   }
 
   function formatDimensionDisplay(value, options = {}) {
@@ -699,6 +909,9 @@
       updateDownloads(svgString, targetWidthPx, targetHeightPx);
       if (!silent) {
         setMessage('リサイズと寸法線の追加が完了しました。');
+        if (usingMobileStepper()) {
+          goToStep(totalSteps - 1);
+        }
       }
       originalRatio = targetWidthPx / targetHeightPx;
       lastKnownDimensionsPx = { width: targetWidthPx, height: targetHeightPx };
@@ -749,6 +962,9 @@
           const metrics = getMetrics(svgEl);
           updateDimensionInputs(metrics);
           setMessage('画像ファイルをSVGとして読み込みました。寸法を調整してリサイズしてください。');
+          if (usingMobileStepper() && totalSteps > 1) {
+            goToStep(1);
+          }
         } catch (error) {
           setMessage(error.message, true);
         }
@@ -779,6 +995,9 @@
             const svgEl = parseSvg(contents);
             const metrics = getMetrics(svgEl);
             updateDimensionInputs(metrics);
+            if (usingMobileStepper() && totalSteps > 1) {
+              goToStep(1);
+            }
           } catch (error) {
             setMessage(error.message, true);
           }
@@ -1076,6 +1295,9 @@
       const metrics = getMetrics(svgEl);
       updateDimensionInputs(metrics);
       setMessage('SVGを解析しました。寸法を調整してリサイズしてください。');
+      if (usingMobileStepper() && totalSteps > 1) {
+        goToStep(1);
+      }
     } catch (error) {
       setMessage(error.message, true);
     }
