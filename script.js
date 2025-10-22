@@ -423,6 +423,8 @@
       transparentBackground,
       backgroundColor,
     });
+    const drillHoleFillColor =
+      normalizeHexColor(backgroundColor) || backgroundColor || '#ffffff';
 
     const defs = includeDimensions
       ? `
@@ -566,7 +568,7 @@
 
         if (holeElements.length) {
           drillHolesGroup = `
-      <g data-generated-by="drill-hole-overlay" fill="none" stroke="${dimensionColors.stroke}" stroke-width="${strokeWidth}">
+      <g data-generated-by="drill-hole-overlay" fill="${drillHoleFillColor}" stroke="${dimensionColors.stroke}" stroke-width="${strokeWidth}">
         ${holeElements.join('\n        ')}
       </g>`;
         }
