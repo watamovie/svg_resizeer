@@ -55,6 +55,24 @@
                 <input type="color" id="backgroundColor" value="#ffffff" />
               </div>
               <label class="checkbox">
+                <input type="checkbox" id="overrideFillColor" />
+                すべての図形の塗りつぶし色を変更
+              </label>
+              <div class="control-group is-disabled">
+                <label for="fillColor">塗りつぶし色</label>
+                <input
+                  type="color"
+                  id="fillColor"
+                  value="#000000"
+                  disabled
+                  aria-disabled="true"
+                />
+              </div>
+              <label class="checkbox">
+                <input type="checkbox" id="hideCanvasSizedShapes" />
+                キャンバスと同じサイズの図形を非表示
+              </label>
+              <label class="checkbox">
                 <input type="checkbox" id="lockRatio" checked />
                 アスペクト比を維持
               </label>
