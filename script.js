@@ -62,6 +62,172 @@
   let lastSelectedUnit = unitSelect ? unitSelect.value : 'px';
   let measurementContainer = null;
 
+  const panelStack = document.querySelector('.panel-stack');
+  const panels = panelStack
+    ? Array.from(panelStack.querySelectorAll('.panel'))
+    : Array.from(document.querySelectorAll('.panel'));
+  const stepButtons = Array.from(
+    document.querySelectorAll('.step-navigation [data-step-target]')
+  );
+  const stepPrevButton = document.getElementById('stepPrev');
+  const stepNextButton = document.getElementById('stepNext');
+  const stepCounter = document.getElementById('stepCounter');
+  const stepActions = document.querySelector('.step-actions');
+  const stepMediaQuery = window.matchMedia('(max-width: 720px)');
+  let currentStepIndex = 0;
+
+  function focusFirstInteractiveElement(panel) {
+    if (!panel) return;
+    const focusable = panel.querySelector(
+      'input:not([type="hidden"]), select, textarea, button, a[href]'
+    );
+    if (focusable && typeof focusable.focus === 'function') {
+      focusable.focus();
+      return;
+    }
+    const heading = panel.querySelector('h2');
+    if (heading && typeof heading.focus === 'function') {
+      heading.setAttribute('tabindex', '-1');
+      heading.addEventListener(
+        'blur',
+        () => heading.removeAttribute('tabindex'),
+        { once: true }
+      );
+      heading.focus();
+    }
+  }
+
+  function updateStepUI({ focusActivePanel = false } = {}) {
+    if (!panels.length) return;
+    const isMobile = stepMediaQuery.matches;
+    const totalSteps = panels.length;
+
+    panels.forEach((panel, index) => {
+      const isActive = !isMobile || index === currentStepIndex;
+      panel.classList.toggle('is-active', isActive);
+      panel.classList.toggle('is-hidden', isMobile && !isActive);
+      if (isMobile && !isActive) {
+        panel.setAttribute('aria-hidden', 'true');
+      } else {
+        panel.removeAttribute('aria-hidden');
+      }
+    });
+
+    stepButtons.forEach((button) => {
+      const targetIndex = Number.parseInt(
+        button.getAttribute('data-step-target'),
+        10
+      );
+      const isValidTarget = Number.isFinite(targetIndex);
+      const isActive = isValidTarget && targetIndex === currentStepIndex;
+      button.classList.toggle('is-active', isActive);
+      button.setAttribute('aria-current', isActive ? 'step' : 'false');
+      if (isMobile) {
+        const shouldDisable = isActive;
+        button.disabled = shouldDisable;
+        if (shouldDisable) {
+          button.setAttribute('aria-disabled', 'true');
+        } else {
+          button.removeAttribute('aria-disabled');
+        }
+      } else {
+        button.disabled = false;
+        button.removeAttribute('aria-disabled');
+      }
+    });
+
+    if (stepActions) {
+      stepActions.hidden = !isMobile;
+    }
+
+    if (stepPrevButton) {
+      stepPrevButton.hidden = !isMobile;
+      stepPrevButton.disabled = currentStepIndex === 0;
+      if (stepPrevButton.disabled) {
+        stepPrevButton.setAttribute('aria-disabled', 'true');
+      } else {
+        stepPrevButton.removeAttribute('aria-disabled');
+      }
+    }
+
+    if (stepNextButton) {
+      stepNextButton.hidden = !isMobile;
+      stepNextButton.disabled = currentStepIndex === totalSteps - 1;
+      stepNextButton.textContent =
+        currentStepIndex === totalSteps - 1 ? '完了' : '次へ';
+      if (stepNextButton.disabled) {
+        stepNextButton.setAttribute('aria-disabled', 'true');
+      } else {
+        stepNextButton.removeAttribute('aria-disabled');
+      }
+    }
+
+    if (stepCounter) {
+      stepCounter.hidden = !isMobile;
+      stepCounter.textContent = `ステップ${currentStepIndex + 1}/${totalSteps}`;
+    }
+
+    if (focusActivePanel && isMobile) {
+      focusFirstInteractiveElement(panels[currentStepIndex]);
+    }
+  }
+
+  function goToStep(index, options = {}) {
+    if (!panels.length) return;
+    const targetIndex = clamp(index, 0, panels.length - 1);
+    if (targetIndex === currentStepIndex) {
+      updateStepUI({ focusActivePanel: options.focusPanel });
+      return;
+    }
+    currentStepIndex = targetIndex;
+    updateStepUI({ focusActivePanel: options.focusPanel });
+  }
+
+  function maybeAdvanceToStep(index) {
+    if (!panels.length || !stepButtons.length) return;
+    if (!Number.isFinite(index)) return;
+    if (stepMediaQuery.matches) {
+      goToStep(index, { focusPanel: true });
+    }
+  }
+
+  const handleStepMediaChange = () => {
+    updateStepUI();
+  };
+
+  if (typeof stepMediaQuery.addEventListener === 'function') {
+    stepMediaQuery.addEventListener('change', handleStepMediaChange);
+  } else if (typeof stepMediaQuery.addListener === 'function') {
+    stepMediaQuery.addListener(handleStepMediaChange);
+  }
+
+  stepButtons.forEach((button) => {
+    const targetIndex = Number.parseInt(button.getAttribute('data-step-target'), 10);
+    if (!Number.isFinite(targetIndex)) {
+      return;
+    }
+    button.addEventListener('click', () => {
+      goToStep(targetIndex, { focusPanel: stepMediaQuery.matches });
+      if (!stepMediaQuery.matches && panels[targetIndex]) {
+        panels[targetIndex].scrollIntoView({ behavior: 'smooth', block: 'start' });
+      }
+    });
+  });
+
+  if (stepPrevButton) {
+    stepPrevButton.addEventListener('click', () => {
+      goToStep(currentStepIndex - 1, { focusPanel: true });
+    });
+  }
+
+  if (stepNextButton) {
+    stepNextButton.addEventListener('click', () => {
+      goToStep(currentStepIndex + 1, { focusPanel: true });
+    });
+  }
+
+  updateStepUI();
+
   function setMessage(text, isError = false) {
     messageEl.textContent = text;
     messageEl.classList.toggle('error', isError);
@@ -699,6 +865,7 @@
       updateDownloads(svgString, targetWidthPx, targetHeightPx);
       if (!silent) {
         setMessage('リサイズと寸法線の追加が完了しました。');
+        maybeAdvanceToStep(2);
       }
       originalRatio = targetWidthPx / targetHeightPx;
       lastKnownDimensionsPx = { width: targetWidthPx, height: targetHeightPx };
@@ -749,6 +916,7 @@
           const metrics = getMetrics(svgEl);
           updateDimensionInputs(metrics);
           setMessage('画像ファイルをSVGとして読み込みました。寸法を調整してリサイズしてください。');
+          maybeAdvanceToStep(1);
         } catch (error) {
           setMessage(error.message, true);
         }
@@ -779,6 +947,7 @@
             const svgEl = parseSvg(contents);
             const metrics = getMetrics(svgEl);
             updateDimensionInputs(metrics);
+            maybeAdvanceToStep(1);
           } catch (error) {
             setMessage(error.message, true);
           }

@@ -15,8 +15,59 @@
         </p>
       </header>
 
-      <section class="panel">
-        <h2>1. SVG/画像を読み込む</h2>
+      <nav class="step-navigation" aria-label="操作ステップ">
+        <button
+          type="button"
+          class="step-pill is-active"
+          data-step-target="0"
+          aria-controls="step-upload"
+        >
+          <span class="step-number">1</span>
+          <span class="step-label">読み込み</span>
+        </button>
+        <button
+          type="button"
+          class="step-pill"
+          data-step-target="1"
+          aria-controls="step-resize"
+        >
+          <span class="step-number">2</span>
+          <span class="step-label">リサイズ設定</span>
+        </button>
+        <button
+          type="button"
+          class="step-pill"
+          data-step-target="2"
+          aria-controls="step-preview"
+        >
+          <span class="step-number">3</span>
+          <span class="step-label">プレビュー</span>
+        </button>
+      </nav>
+
+      <div class="step-actions" aria-label="ステップ操作" hidden>
+        <button
+          type="button"
+          class="step-nav-button step-nav-button--secondary"
+          id="stepPrev"
+          aria-label="前のステップに戻る"
+        >
+          戻る
+        </button>
+        <div class="step-counter" id="stepCounter" aria-live="polite">ステップ1/3</div>
+        <button
+          type="button"
+          class="step-nav-button step-nav-button--primary"
+          id="stepNext"
+          aria-label="次のステップへ"
+        >
+          次へ
+        </button>
+      </div>
+
+      <div class="panel-stack">
+        <section id="step-upload" class="panel is-active" aria-labelledby="step-upload-title">
+          <h2 id="step-upload-title">1. SVG/画像を読み込む</h2>
         <div class="input-area">
           <label class="file-input">
             <span>SVG/画像ファイルを選択</span>
@@ -28,10 +79,10 @@
           <label class="textarea-label" for="svgInput">またはSVGコードを直接貼り付け</label>
           <textarea id="svgInput" rows="10" placeholder="&lt;svg&gt;...&lt;/svg&gt;"></textarea>
         </div>
-      </section>
+        </section>
 
-      <section class="panel">
-        <h2>2. リサイズ設定</h2>
+        <section id="step-resize" class="panel" aria-labelledby="step-resize-title">
+          <h2 id="step-resize-title">2. リサイズ設定</h2>
         <div class="controls">
           <div class="control-group">
             <label for="widthInput">幅</label>
@@ -44,8 +95,8 @@
           <div class="control-group">
             <label for="unitSelect">単位</label>
             <select id="unitSelect">
+              <option value="mm" selected>mm</option>
               <option value="px">px</option>
-              <option value="mm">mm</option>
             </select>
           </div>
           <div class="control-group">
@@ -117,17 +168,18 @@
         <p class="hint">
           数値を入力するとリアルタイムで寸法が反映されます。アスペクト比を維持する場合は、幅または高さを入力するだけで自動計算されます。
         </p>
-      </section>
+        </section>
 
-      <section class="panel">
-        <h2>3. プレビュー &amp; ダウンロード</h2>
+        <section id="step-preview" class="panel" aria-labelledby="step-preview-title">
+          <h2 id="step-preview-title">3. プレビュー &amp; ダウンロード</h2>
         <div id="message" role="status" aria-live="polite"></div>
         <div id="previewArea" class="preview" aria-label="リサイズされたSVGのプレビュー"></div>
         <div class="downloads">
           <a id="downloadSvg" class="button" download="resized-with-dimensions.svg" aria-disabled="true">SVGをダウンロード</a>
           <a id="downloadPng" class="button" download="resized-with-dimensions.png" aria-disabled="true">PNGをダウンロード</a>
         </div>
-      </section>
+        </section>
+      </div>
     </main>
 
     <script src="script.js" defer></script>
