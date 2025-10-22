@@ -38,6 +38,14 @@
   const lockRatio = document.getElementById('lockRatio');
   const resizeButton = document.getElementById('resizeButton');
   const backgroundColorInput = document.getElementById('backgroundColor');
+  const hideCanvasSizedShapesCheckbox = document.getElementById(
+    'hideCanvasSizedShapes'
+  );
+  const applyFillColorCheckbox = document.getElementById('applyFillColor');
+  const fillColorInput = document.getElementById('fillColor');
+  const fillColorControlGroup = fillColorInput
+    ? fillColorInput.closest('.control-group')
+    : document.getElementById('fillColorGroup');
   const transparentBackgroundCheckbox = document.getElementById('transparentBackground');
   const showDimensionsCheckbox = document.getElementById('showDimensions');
   const showDimensionLabelsCheckbox = document.getElementById('showDimensionLabels');
@@ -196,6 +204,111 @@
       return null;
     }
     return parsed;
+  }
+
+  function resolveLengthWithReference(value, reference) {
+    if (value == null) return null;
+    const trimmed = value.toString().trim();
+    if (!trimmed) return null;
+    if (trimmed.endsWith('%') && Number.isFinite(reference)) {
+      const numeric = Number.parseFloat(trimmed.slice(0, -1));
+      if (Number.isFinite(numeric)) {
+        return (numeric / 100) * reference;
+      }
+    }
+    return parseLength(trimmed);
+  }
+
+  function valuesAreClose(a, b) {
+    if (!Number.isFinite(a) || !Number.isFinite(b)) {
+      return false;
+    }
+    const scale = Math.max(Math.abs(a), Math.abs(b));
+    const tolerance = Math.max(scale * 0.005, 0.5);
+    return Math.abs(a - b) <= tolerance;
+  }
+
+  function hideCanvasSizedElements(svgRoot, viewBox) {
+    if (!svgRoot || !viewBox) return;
+    const candidates = svgRoot.querySelectorAll('[width][height]');
+    const allowedTags = new Set(['rect', 'image', 'foreignobject']);
+    candidates.forEach((element) => {
+      if (element === svgRoot) return;
+      const tagName = element.tagName.toLowerCase();
+      if (!allowedTags.has(tagName)) return;
+      if (element.closest('defs')) return;
+
+      const width = resolveLengthWithReference(
+        element.getAttribute('width'),
+        viewBox.width
+      );
+      const height = resolveLengthWithReference(
+        element.getAttribute('height'),
+        viewBox.height
+      );
+
+      if (!Number.isFinite(width) || !Number.isFinite(height)) {
+        return;
+      }
+      if (!valuesAreClose(width, viewBox.width)) {
+        return;
+      }
+      if (!valuesAreClose(height, viewBox.height)) {
+        return;
+      }
+
+      const xAttr = element.getAttribute('x');
+      const yAttr = element.getAttribute('y');
+
+      let x = viewBox.minX;
+      if (xAttr != null) {
+        const resolvedX = resolveLengthWithReference(xAttr, viewBox.width);
+        if (Number.isFinite(resolvedX)) {
+          x = resolvedX;
+        }
+      }
+
+      let y = viewBox.minY;
+      if (yAttr != null) {
+        const resolvedY = resolveLengthWithReference(yAttr, viewBox.height);
+        if (Number.isFinite(resolvedY)) {
+          y = resolvedY;
+        }
+      }
+
+      if (!valuesAreClose(x, viewBox.minX)) {
+        return;
+      }
+      if (!valuesAreClose(y, viewBox.minY)) {
+        return;
+      }
+
+      element.setAttribute('display', 'none');
+      element.setAttribute('data-hidden-by', 'canvas-size-filter');
+    });
+  }
+
+  function applyFillColorToSvg(svgRoot, color) {
+    if (!svgRoot || !color) return;
+    const normalizedColor = normalizeHexColor(color) || color;
+    if (!normalizedColor) return;
+    const targets = svgRoot.querySelectorAll(
+      'path, rect, circle, ellipse, polygon, polyline, text'
+    );
+    targets.forEach((element) => {
+      if (element.closest('defs')) return;
+      const attrFill = (element.getAttribute('fill') || '').trim().toLowerCase();
+      const styleFill = element.style
+        ? (element.style.fill || '').trim().toLowerCase()
+        : '';
+      if (attrFill === 'none' || styleFill === 'none') {
+        return;
+      }
+      if (element.style) {
+        element.style.fill = normalizedColor;
+      }
+      element.setAttribute('fill', normalizedColor);
+    });
   }
 
   function clamp(value, min, max) {
@@ -387,6 +500,9 @@
       showDrillHoles = false,
       drillHoleOffsetMm = 20,
       drillHoleDiameterMm = 10,
+      hideCanvasSizedShapes = false,
+      applyFillColor = false,
+      fillColor = '#000000',
     } = options;
     const metrics = getMetrics(svgEl);
     const viewBox = metrics.viewBox;
@@ -395,6 +511,14 @@
     const clone = svgEl.cloneNode(true);
     clone.removeAttribute('width');
     clone.removeAttribute('height');
+
+    if (hideCanvasSizedShapes) {
+      hideCanvasSizedElements(clone, viewBox);
+    }
+
+    if (applyFillColor) {
+      applyFillColorToSvg(clone, fillColor);
+    }
 
     const childMarkup = Array.from(clone.childNodes)
       .map((node) => serializer.serializeToString(node))
@@ -722,6 +846,13 @@
         showDrillHoles: showDrillHolesCheckbox ? showDrillHolesCheckbox.checked : false,
         drillHoleOffsetMm: drillHoleOffsetValue ?? 20,
         drillHoleDiameterMm: drillHoleDiameterValue ?? 10,
+        hideCanvasSizedShapes: hideCanvasSizedShapesCheckbox
+          ? hideCanvasSizedShapesCheckbox.checked
+          : false,
+        applyFillColor: applyFillColorCheckbox
+          ? applyFillColorCheckbox.checked
+          : false,
+        fillColor: fillColorInput ? fillColorInput.value : '#000000',
       });
       previewArea.innerHTML = svgString;
       updateDownloads(svgString, targetWidthPx, targetHeightPx);
@@ -936,6 +1067,20 @@
     setControlGroupState(drillHoleDiameterGroup, enabled);
   };
 
+  const updateFillColorControlsState = () => {
+    const enabled = applyFillColorCheckbox ? applyFillColorCheckbox.checked : true;
+    if (fillColorControlGroup) {
+      setControlGroupState(fillColorControlGroup, enabled);
+    } else if (fillColorInput) {
+      fillColorInput.disabled = !enabled;
+      if (enabled) {
+        fillColorInput.removeAttribute('aria-disabled');
+      } else {
+        fillColorInput.setAttribute('aria-disabled', 'true');
+      }
+    }
+  };
+
   widthInput.addEventListener('input', () => {
     const unit = unitSelect.value;
     const widthValue = parsePositiveNumber(widthInput.value);
@@ -1025,6 +1170,31 @@
   if (backgroundColorInput) {
     backgroundColorInput.addEventListener('input', () => {
       if (transparentBackgroundCheckbox && transparentBackgroundCheckbox.checked) {
+        return;
+      }
+      refreshPreviewIfReady();
+    });
+  }
+
+  if (hideCanvasSizedShapesCheckbox) {
+    hideCanvasSizedShapesCheckbox.addEventListener('change', () => {
+      refreshPreviewIfReady();
+    });
+  }
+
+  if (applyFillColorCheckbox) {
+    applyFillColorCheckbox.addEventListener('change', () => {
+      updateFillColorControlsState();
+      refreshPreviewIfReady();
+    });
+    updateFillColorControlsState();
+  } else {
+    updateFillColorControlsState();
+  }
+
+  if (fillColorInput) {
+    fillColorInput.addEventListener('input', () => {
+      if (applyFillColorCheckbox && !applyFillColorCheckbox.checked) {
         return;
       }
       refreshPreviewIfReady();
