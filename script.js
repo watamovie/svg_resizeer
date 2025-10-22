@@ -38,6 +38,17 @@
   const messageEl = document.getElementById('message');
   const downloadSvgLink = document.getElementById('downloadSvg');
   const downloadPngLink = document.getElementById('downloadPng');
+  const stepPanels = Array.from(document.querySelectorAll('[data-step-index]'));
+  const stepNavButtons = Array.from(
+    document.querySelectorAll('.step-nav [data-target-step]')
+  );
+  const stepActionButtons = Array.from(
+    document.querySelectorAll('[data-step-action]')
+  );
+  const mobileStepQuery =
+    typeof window.matchMedia === 'function'
+      ? window.matchMedia('(max-width: 768px)')
+      : { matches: false };
 
   const unitConversions = {
     px: {
@@ -59,8 +70,69 @@
   let originalRatio = null;
   let activeObjectUrls = [];
   let lastKnownDimensionsPx = { width: null, height: null };
-  let lastSelectedUnit = unitSelect ? unitSelect.value : 'px';
+  let lastSelectedUnit = unitSelect ? unitSelect.value : 'mm';
   let measurementContainer = null;
+  let activeStepIndex = 0;
+
+  function syncStepPanelAccessibility() {
+    if (!stepPanels.length) return;
+    const isMobile = mobileStepQuery.matches;
+    stepPanels.forEach((panel, index) => {
+      const isActive = index === activeStepIndex;
+      if (isMobile && !isActive) {
+        panel.setAttribute('aria-hidden', 'true');
+      } else {
+        panel.removeAttribute('aria-hidden');
+      }
+    });
+  }
+
+  function setActiveStep(index, options = {}) {
+    if (!stepPanels.length) return;
+    const { focusPanel = false } = options;
+    const targetIndex = Number.isFinite(index) ? index : activeStepIndex;
+    const clamped = Math.max(
+      0,
+      Math.min(stepPanels.length - 1, Math.round(targetIndex))
+    );
+    activeStepIndex = clamped;
+    const isMobile = mobileStepQuery.matches;
+
+    stepPanels.forEach((panel, panelIndex) => {
+      const isActive = panelIndex === clamped;
+      panel.classList.toggle('is-active', isActive);
+      if (isMobile && !isActive) {
+        panel.setAttribute('aria-hidden', 'true');
+      } else {
+        panel.removeAttribute('aria-hidden');
+      }
+    });
+
+    stepNavButtons.forEach((button, buttonIndex) => {
+      const isActive = buttonIndex === clamped;
+      button.classList.toggle('is-active', isActive);
+      if (isActive) {
+        button.setAttribute('aria-current', 'step');
+      } else {
+        button.removeAttribute('aria-current');
+      }
+    });
+
+    if (focusPanel) {
+      const activePanel = stepPanels[clamped];
+      if (isMobile) {
+        const focusable = activePanel.querySelector(
+          'input, textarea, select, button, [tabindex]:not([tabindex="-1"])'
+        );
+        if (focusable && typeof focusable.focus === 'function') {
+          focusable.focus({ preventScroll: true });
+        }
+        activePanel.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      } else {
+        activePanel.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      }
+    }
+  }
 
   function setMessage(text, isError = false) {
     messageEl.textContent = text;
@@ -797,6 +869,34 @@
     setMessage('SVGまたは画像ファイルを選択してください。', true);
   }
 
+  if (stepNavButtons.length) {
+    stepNavButtons.forEach((button) => {
+      button.addEventListener('click', () => {
+        const targetStep = Number.parseInt(button.dataset.targetStep, 10);
+        if (Number.isInteger(targetStep)) {
+          setActiveStep(targetStep, { focusPanel: true });
+        }
+      });
+    });
+  }
+
+  if (stepActionButtons.length) {
+    stepActionButtons.forEach((button) => {
+      button.addEventListener('click', () => {
+        const action = button.dataset.stepAction;
+        if (!action) return;
+        if (action === 'next') {
+          if (button.dataset.triggerResize === 'true') {
+            performResize();
+          }
+          setActiveStep(activeStepIndex + 1, { focusPanel: true });
+        } else if (action === 'prev') {
+          setActiveStep(activeStepIndex - 1, { focusPanel: true });
+        }
+      });
+    });
+  }
+
   fileInput.addEventListener('change', (event) => {
     const file = event.target.files && event.target.files[0];
     if (file) handleFile(file);
@@ -1080,6 +1180,19 @@
       setMessage(error.message, true);
     }
   });
+
+  if (typeof mobileStepQuery.addEventListener === 'function') {
+    mobileStepQuery.addEventListener('change', () => {
+      syncStepPanelAccessibility();
+    });
+  } else if (typeof mobileStepQuery.addListener === 'function') {
+    mobileStepQuery.addListener(() => {
+      syncStepPanelAccessibility();
+    });
+  }
+
+  setActiveStep(0);
+  syncStepPanelAccessibility();
 
   window.addEventListener('beforeunload', () => {
     clearObjectUrls();
