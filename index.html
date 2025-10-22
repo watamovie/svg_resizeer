@@ -15,7 +15,37 @@
         </p>
       </header>
 
-      <section class="panel">
+      <nav class="stepper" aria-label="操作ステップ">
+        <button
+          type="button"
+          class="stepper-step is-active"
+          data-step-target="input"
+          aria-controls="step-input"
+        >
+          <span class="stepper-step__index">1</span>
+          <span class="stepper-step__label">読み込み</span>
+        </button>
+        <button
+          type="button"
+          class="stepper-step"
+          data-step-target="resize"
+          aria-controls="step-resize"
+        >
+          <span class="stepper-step__index">2</span>
+          <span class="stepper-step__label">リサイズ設定</span>
+        </button>
+        <button
+          type="button"
+          class="stepper-step"
+          data-step-target="preview"
+          aria-controls="step-preview"
+        >
+          <span class="stepper-step__index">3</span>
+          <span class="stepper-step__label">プレビュー</span>
+        </button>
+      </nav>
+
+      <section class="panel step-panel is-active" id="step-input" data-step="input">
         <h2>1. SVG/画像を読み込む</h2>
         <div class="input-area">
           <label class="file-input">
@@ -28,9 +58,18 @@
           <label class="textarea-label" for="svgInput">またはSVGコードを直接貼り付け</label>
           <textarea id="svgInput" rows="10" placeholder="&lt;svg&gt;...&lt;/svg&gt;"></textarea>
         </div>
+        <div class="step-actions">
+          <button
+            type="button"
+            class="step-nav-button step-nav-button--primary"
+            data-step-next="resize"
+          >
+            リサイズ設定へ進む
+          </button>
+        </div>
       </section>
 
-      <section class="panel">
+      <section class="panel step-panel" id="step-resize" data-step="resize">
         <h2>2. リサイズ設定</h2>
         <div class="controls">
           <div class="control-group">
@@ -44,8 +83,8 @@
           <div class="control-group">
             <label for="unitSelect">単位</label>
             <select id="unitSelect">
+              <option value="mm" selected>mm</option>
               <option value="px">px</option>
-              <option value="mm">mm</option>
             </select>
           </div>
           <div class="control-group">
@@ -112,20 +151,37 @@
               <span id="dimensionFontSizeValue">100%</span>
             </div>
           </div>
-          <button id="resizeButton" class="primary">リサイズして寸法線を追加</button>
+          <button type="button" id="resizeButton" class="primary">リサイズして寸法線を追加</button>
         </div>
         <p class="hint">
           数値を入力するとリアルタイムで寸法が反映されます。アスペクト比を維持する場合は、幅または高さを入力するだけで自動計算されます。
         </p>
+        <div class="step-actions">
+          <button type="button" class="step-nav-button" data-step-prev="input">
+            読み込みに戻る
+          </button>
+          <button
+            type="button"
+            class="step-nav-button step-nav-button--primary"
+            data-step-next="preview"
+          >
+            プレビューへ進む
+          </button>
+        </div>
       </section>
 
-      <section class="panel">
+      <section class="panel step-panel" id="step-preview" data-step="preview">
         <h2>3. プレビュー &amp; ダウンロード</h2>
         <div id="message" role="status" aria-live="polite"></div>
         <div id="previewArea" class="preview" aria-label="リサイズされたSVGのプレビュー"></div>
         <div class="downloads">
           <a id="downloadSvg" class="button" download="resized-with-dimensions.svg" aria-disabled="true">SVGをダウンロード</a>
           <a id="downloadPng" class="button" download="resized-with-dimensions.png" aria-disabled="true">PNGをダウンロード</a>
+        </div>
+        <div class="step-actions">
+          <button type="button" class="step-nav-button" data-step-prev="resize">
+            リサイズ設定に戻る
+          </button>
         </div>
       </section>
     </main>

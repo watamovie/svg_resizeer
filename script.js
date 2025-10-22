@@ -1,6 +1,20 @@
 (() => {
   'use strict';
 
+  const appContainer = document.querySelector('.container');
+  const stepPanels = Array.from(document.querySelectorAll('.step-panel'));
+  const stepperButtons = Array.from(document.querySelectorAll('[data-step-target]'));
+  const stepPrevButtons = Array.from(document.querySelectorAll('[data-step-prev]'));
+  const stepNextButtons = Array.from(document.querySelectorAll('[data-step-next]'));
+  const stepIds = stepPanels.map((panel) => panel.dataset.step).filter(Boolean);
+  let activeStepId =
+    stepPanels.find((panel) => panel.classList.contains('is-active'))?.dataset.step ||
+    stepIds[0] ||
+    null;
+  const stepModeMedia = typeof window.matchMedia === 'function'
+    ? window.matchMedia('(max-width: 768px)')
+    : null;
+
   const fileInput = document.getElementById('fileInput');
   const dropZone = document.getElementById('dropZone');
   const svgInput = document.getElementById('svgInput');
@@ -61,6 +75,160 @@
   let lastKnownDimensionsPx = { width: null, height: null };
   let lastSelectedUnit = unitSelect ? unitSelect.value : 'px';
   let measurementContainer = null;
+
+  const isStepModeActive = () =>
+    Boolean(appContainer && appContainer.classList.contains('is-step-mode'));
+
+  function ensureActivePanel() {
+    if (!stepIds.length) {
+      return null;
+    }
+    if (!activeStepId || !stepIds.includes(activeStepId)) {
+      activeStepId = stepIds[0];
+    }
+    const activePanel = stepPanels.find((panel) => panel.dataset.step === activeStepId);
+    if (activePanel) {
+      return activePanel;
+    }
+    activeStepId = stepIds[0];
+    return stepPanels.find((panel) => panel.dataset.step === activeStepId) || null;
+  }
+
+  function updateStepUI(options = {}) {
+    const { scroll = true } = options;
+    const activePanel = ensureActivePanel();
+    if (!activePanel) {
+      return;
+    }
+
+    const activeIndex = stepIds.indexOf(activeStepId);
+    const stepModeEnabled = isStepModeActive();
+
+    stepPanels.forEach((panel) => {
+      const isActive = panel === activePanel;
+      panel.classList.toggle('is-active', isActive);
+      if (stepModeEnabled) {
+        if (isActive) {
+          panel.removeAttribute('aria-hidden');
+          if (typeof panel.inert !== 'undefined') {
+            panel.inert = false;
+          }
+        } else {
+          panel.setAttribute('aria-hidden', 'true');
+          if (typeof panel.inert !== 'undefined') {
+            panel.inert = true;
+          }
+        }
+      } else {
+        panel.removeAttribute('aria-hidden');
+        if (typeof panel.inert !== 'undefined') {
+          panel.inert = false;
+        }
+      }
+    });
+
+    stepperButtons.forEach((button) => {
+      const targetStep = button.dataset.stepTarget;
+      if (!targetStep) return;
+      const targetIndex = stepIds.indexOf(targetStep);
+      const isActive = targetStep === activeStepId;
+      button.classList.toggle('is-active', isActive);
+      if (isActive) {
+        button.setAttribute('aria-current', 'step');
+      } else {
+        button.removeAttribute('aria-current');
+      }
+      if (targetIndex !== -1) {
+        button.classList.toggle('is-complete', targetIndex < activeIndex);
+      }
+    });
+
+    if (stepModeEnabled && scroll && typeof activePanel.scrollIntoView === 'function') {
+      try {
+        activePanel.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      } catch (error) {
+        activePanel.scrollIntoView(true);
+      }
+    }
+  }
+
+  function setActiveStep(stepId, options = {}) {
+    if (!stepIds.length || !stepId || !stepIds.includes(stepId)) {
+      return;
+    }
+    const { scroll = true } = options;
+    activeStepId = stepId;
+    updateStepUI({ scroll });
+  }
+
+  const goToStep = (stepId, options = {}) => {
+    if (!stepIds.length || !stepId || !stepIds.includes(stepId)) {
+      return;
+    }
+    const shouldScroll =
+      options.scroll !== undefined ? options.scroll : isStepModeActive();
+    setActiveStep(stepId, { scroll: shouldScroll });
+  };
+
+  function syncStepMode(source) {
+    if (!appContainer) {
+      return;
+    }
+    const matches = Boolean(source && 'matches' in source ? source.matches : false);
+    if (matches) {
+      appContainer.classList.add('is-step-mode');
+    } else {
+      appContainer.classList.remove('is-step-mode');
+      stepPanels.forEach((panel) => {
+        panel.removeAttribute('aria-hidden');
+        if (typeof panel.inert !== 'undefined') {
+          panel.inert = false;
+        }
+      });
+    }
+    updateStepUI({ scroll: false });
+  }
+
+  if (stepIds.length) {
+    const initialSource = stepModeMedia || { matches: false };
+    syncStepMode(initialSource);
+
+    if (stepModeMedia) {
+      const handleStepModeChange = (event) => syncStepMode(event);
+      if (typeof stepModeMedia.addEventListener === 'function') {
+        stepModeMedia.addEventListener('change', handleStepModeChange);
+      } else if (typeof stepModeMedia.addListener === 'function') {
+        stepModeMedia.addListener(handleStepModeChange);
+      }
+    }
+
+    stepperButtons.forEach((button) => {
+      button.addEventListener('click', () => {
+        const target = button.dataset.stepTarget;
+        if (target) {
+          goToStep(target);
+        }
+      });
+    });
+
+    stepNextButtons.forEach((button) => {
+      button.addEventListener('click', () => {
+        const target = button.dataset.stepNext;
+        if (target) {
+          goToStep(target);
+        }
+      });
+    });
+
+    stepPrevButtons.forEach((button) => {
+      button.addEventListener('click', () => {
+        const target = button.dataset.stepPrev;
+        if (target) {
+          goToStep(target);
+        }
+      });
+    });
+  }
 
   function setMessage(text, isError = false) {
     messageEl.textContent = text;
@@ -699,6 +867,7 @@
       updateDownloads(svgString, targetWidthPx, targetHeightPx);
       if (!silent) {
         setMessage('リサイズと寸法線の追加が完了しました。');
+        goToStep('preview');
       }
       originalRatio = targetWidthPx / targetHeightPx;
       lastKnownDimensionsPx = { width: targetWidthPx, height: targetHeightPx };
@@ -749,6 +918,7 @@
           const metrics = getMetrics(svgEl);
           updateDimensionInputs(metrics);
           setMessage('画像ファイルをSVGとして読み込みました。寸法を調整してリサイズしてください。');
+          goToStep('resize');
         } catch (error) {
           setMessage(error.message, true);
         }
@@ -779,6 +949,7 @@
             const svgEl = parseSvg(contents);
             const metrics = getMetrics(svgEl);
             updateDimensionInputs(metrics);
+            goToStep('resize');
           } catch (error) {
             setMessage(error.message, true);
           }
@@ -1076,6 +1247,9 @@
       const metrics = getMetrics(svgEl);
       updateDimensionInputs(metrics);
       setMessage('SVGを解析しました。寸法を調整してリサイズしてください。');
+      if (activeStepId === 'input') {
+        goToStep('resize');
+      }
     } catch (error) {
       setMessage(error.message, true);
     }
