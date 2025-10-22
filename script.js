@@ -14,6 +14,9 @@
   const showDimensionsCheckbox = document.getElementById('showDimensions');
   const showDimensionLabelsCheckbox = document.getElementById('showDimensionLabels');
   const roundDimensionValuesCheckbox = document.getElementById('roundDimensionValues');
+  const showDrillHolesCheckbox = document.getElementById('showDrillHoles');
+  const drillHoleOffsetInput = document.getElementById('drillHoleOffset');
+  const drillHoleDiameterInput = document.getElementById('drillHoleDiameter');
   const dimensionFontSizeSlider = document.getElementById('dimensionFontSize');
   const dimensionFontSizeValue = document.getElementById('dimensionFontSizeValue');
   const dimensionFontSizeGroup = dimensionFontSizeSlider
@@ -25,6 +28,12 @@
   const roundDimensionValuesControl = roundDimensionValuesCheckbox
     ? roundDimensionValuesCheckbox.closest('.checkbox')
     : null;
+  const drillHoleOffsetGroup = drillHoleOffsetInput
+    ? drillHoleOffsetInput.closest('.control-group')
+    : document.getElementById('drillHoleOffsetGroup');
+  const drillHoleDiameterGroup = drillHoleDiameterInput
+    ? drillHoleDiameterInput.closest('.control-group')
+    : document.getElementById('drillHoleDiameterGroup');
   const previewArea = document.getElementById('previewArea');
   const messageEl = document.getElementById('message');
   const downloadSvgLink = document.getElementById('downloadSvg');
@@ -44,6 +53,8 @@
       fromPx: (value) => value * (25.4 / 96),
     },
   };
+
+  const MM_TO_PX = 96 / 25.4;
 
   let originalRatio = null;
   let activeObjectUrls = [];
@@ -149,6 +160,30 @@
       return null;
     }
     return parsed;
+  }
+
+  function parseNonNegativeNumber(value) {
+    const parsed = Number.parseFloat(value);
+    if (!Number.isFinite(parsed) || parsed < 0) {
+      return null;
+    }
+    return parsed;
+  }
+
+  function clamp(value, min, max) {
+    if (!Number.isFinite(min)) {
+      min = 0;
+    }
+    if (!Number.isFinite(max)) {
+      max = min;
+    }
+    if (max < min) {
+      return min;
+    }
+    if (!Number.isFinite(value)) {
+      return min;
+    }
+    return Math.min(Math.max(value, min), max);
   }
 
   function formatDimensionDisplay(value, options = {}) {
@@ -321,6 +356,9 @@
       backgroundColor = '#ffffff',
       transparentBackground = false,
       dimensionTextScale = 1,
+      showDrillHoles = false,
+      drillHoleOffsetMm = 20,
+      drillHoleDiameterMm = 10,
     } = options;
     const metrics = getMetrics(svgEl);
     const viewBox = metrics.viewBox;
@@ -425,8 +463,115 @@
     const formattedDisplayHeight = formatDimensionDisplay(displayHeight, {
       round: roundDimensionDisplay,
     });
-    const widthLabelText = `${showDimensionLabels ? '幅 ' : ''}${formattedDisplayWidth}${unitLabel}`;
-    const heightLabelText = `${showDimensionLabels ? '高さ ' : ''}${formattedDisplayHeight}${unitLabel}`;
+    const approxPrefix = roundDimensionDisplay ? '約' : '';
+    const widthValueText = formattedDisplayWidth
+      ? `${approxPrefix}${formattedDisplayWidth}${unitLabel}`
+      : '';
+    const heightValueText = formattedDisplayHeight
+      ? `${approxPrefix}${formattedDisplayHeight}${unitLabel}`
+      : '';
+    const widthLabelText = showDimensionLabels
+      ? widthValueText
+        ? `幅 ${widthValueText}`
+        : '幅'
+      : widthValueText;
+    const heightLabelText = showDimensionLabels
+      ? heightValueText
+        ? `高さ ${heightValueText}`
+        : '高さ'
+      : heightValueText;
+
+    let drillHolesGroup = '';
+    if (
+      showDrillHoles &&
+      Number.isFinite(targetWidthPx) &&
+      Number.isFinite(targetHeightPx) &&
+      targetWidthPx > 0 &&
+      targetHeightPx > 0 &&
+      Number.isFinite(viewBox.width) &&
+      Number.isFinite(viewBox.height) &&
+      viewBox.width > 0 &&
+      viewBox.height > 0
+    ) {
+      const offsetMmValue =
+        Number.isFinite(drillHoleOffsetMm) && drillHoleOffsetMm >= 0
+          ? drillHoleOffsetMm
+          : 20;
+      const diameterMmValue =
+        Number.isFinite(drillHoleDiameterMm) && drillHoleDiameterMm > 0
+          ? drillHoleDiameterMm
+          : 10;
+      const offsetPx = offsetMmValue * MM_TO_PX;
+      const radiusPx = (diameterMmValue / 2) * MM_TO_PX;
+
+      const pxToViewBoxX = (px) => (px * finalViewBox.width) / targetWidthPx;
+      const pxToViewBoxY = (px) => (px * finalViewBox.height) / targetHeightPx;
+
+      const offsetX = pxToViewBoxX(offsetPx);
+      const offsetY = pxToViewBoxY(offsetPx);
+      const radiusX = pxToViewBoxX(radiusPx);
+      const radiusY = pxToViewBoxY(radiusPx);
+      let radius = Math.min(radiusX, radiusY);
+
+      const maxRadius = Math.min(viewBox.width / 2, viewBox.height / 2);
+
+      if (
+        !Number.isFinite(radius) ||
+        radius <= 0 ||
+        !Number.isFinite(maxRadius) ||
+        maxRadius <= 0
+      ) {
+        radius = 0;
+      } else if (radius > maxRadius) {
+        radius = maxRadius;
+      }
+
+      if (radius > 0) {
+        const maxOffsetX = Math.max(viewBox.width - radius, radius);
+        const maxOffsetY = Math.max(viewBox.height - radius, radius);
+        const safeOffsetX = clamp(offsetX, radius, maxOffsetX);
+        const safeOffsetY = clamp(offsetY, radius, maxOffsetY);
+
+        const uniquePositions = (values) => {
+          const result = [];
+          values.forEach((value) => {
+            if (!Number.isFinite(value)) return;
+            const exists = result.some(
+              (existing) => Math.abs(existing - value) < 1e-3
+            );
+            if (!exists) {
+              result.push(value);
+            }
+          });
+          return result;
+        };
+
+        const xPositions = uniquePositions([
+          viewBox.minX + safeOffsetX,
+          viewBox.minX + viewBox.width - safeOffsetX,
+        ]);
+        const yPositions = uniquePositions([
+          viewBox.minY + safeOffsetY,
+          viewBox.minY + viewBox.height - safeOffsetY,
+        ]);
+
+        const holeElements = [];
+        xPositions.forEach((cx) => {
+          yPositions.forEach((cy) => {
+            holeElements.push(
+              `<circle cx="${cx}" cy="${cy}" r="${radius}"></circle>`
+            );
+          });
+        });
+
+        if (holeElements.length) {
+          drillHolesGroup = `
+      <g data-generated-by="drill-hole-overlay" fill="none" stroke="${dimensionColors.stroke}" stroke-width="${strokeWidth}">
+        ${holeElements.join('\n        ')}
+      </g>`;
+        }
+      }
+    }
 
     const labels = includeDimensions
       ? `
@@ -450,6 +595,7 @@
         <g>
           ${childMarkup}
         </g>
+        ${drillHolesGroup}
         ${dimensionLines}
         ${labels}
       </svg>
@@ -519,6 +665,12 @@
     const unit = unitSelect.value;
     const targetWidthPx = toPx(widthValue, unit);
     const targetHeightPx = toPx(heightValue, unit);
+    const drillHoleOffsetValue = drillHoleOffsetInput
+      ? parseNonNegativeNumber(drillHoleOffsetInput.value)
+      : null;
+    const drillHoleDiameterValue = drillHoleDiameterInput
+      ? parsePositiveNumber(drillHoleDiameterInput.value)
+      : null;
 
     try {
       const svgEl = parseSvg(svgText);
@@ -537,6 +689,9 @@
         dimensionTextScale: dimensionFontSizeSlider
           ? Math.max(parseFloat(dimensionFontSizeSlider.value) / 100, 0.2)
           : 1,
+        showDrillHoles: showDrillHolesCheckbox ? showDrillHolesCheckbox.checked : false,
+        drillHoleOffsetMm: drillHoleOffsetValue ?? 20,
+        drillHoleDiameterMm: drillHoleDiameterValue ?? 10,
       });
       previewArea.innerHTML = svgString;
       updateDownloads(svgString, targetWidthPx, targetHeightPx);
@@ -693,6 +848,22 @@
     }
   }
 
+  function setControlGroupState(group, enabled) {
+    if (!group) return;
+    group.classList.toggle('is-disabled', !enabled);
+    const interactiveElements = group.querySelectorAll(
+      'input, select, textarea, button'
+    );
+    interactiveElements.forEach((element) => {
+      element.disabled = !enabled;
+      if (enabled) {
+        element.removeAttribute('aria-disabled');
+      } else {
+        element.setAttribute('aria-disabled', 'true');
+      }
+    });
+  }
+
   if (dimensionFontSizeSlider) {
     dimensionFontSizeSlider.addEventListener('input', () => {
       updateDimensionFontSizeValue();
@@ -724,6 +895,12 @@
       roundDimensionValuesControl,
       enabled
     );
+  };
+
+  const updateDrillHoleControlsState = () => {
+    const enabled = showDrillHolesCheckbox ? showDrillHolesCheckbox.checked : false;
+    setControlGroupState(drillHoleOffsetGroup, enabled);
+    setControlGroupState(drillHoleDiameterGroup, enabled);
   };
 
   widthInput.addEventListener('input', () => {
@@ -860,6 +1037,28 @@
 
   if (roundDimensionValuesCheckbox) {
     roundDimensionValuesCheckbox.addEventListener('change', () => {
+      refreshPreviewIfReady();
+    });
+  }
+
+  if (showDrillHolesCheckbox) {
+    showDrillHolesCheckbox.addEventListener('change', () => {
+      updateDrillHoleControlsState();
+      refreshPreviewIfReady();
+    });
+    updateDrillHoleControlsState();
+  } else {
+    updateDrillHoleControlsState();
+  }
+
+  if (drillHoleOffsetInput) {
+    drillHoleOffsetInput.addEventListener('input', () => {
+      refreshPreviewIfReady();
+    });
+  }
+
+  if (drillHoleDiameterInput) {
+    drillHoleDiameterInput.addEventListener('input', () => {
       refreshPreviewIfReady();
     });
   }
