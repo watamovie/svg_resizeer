@@ -211,6 +211,66 @@ textarea:focus {
   align-items: end;
 }
 
+.advanced-settings {
+  grid-column: 1 / -1;
+  border: 1px solid var(--border);
+  border-radius: 0.9rem;
+  background: var(--surface);
+  padding: 0.75rem 1rem;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.12);
+}
+
+.advanced-settings > summary {
+  font-weight: 700;
+  font-size: 0.98rem;
+  cursor: pointer;
+  list-style: none;
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.5rem 0.4rem;
+  border-radius: 0.65rem;
+  transition: background 0.2s ease;
+}
+
+.advanced-settings > summary::marker {
+  display: none;
+}
+
+.advanced-settings > summary::-webkit-details-marker {
+  display: none;
+}
+
+.advanced-settings > summary::after {
+  content: '';
+  width: 0.65rem;
+  height: 0.65rem;
+  border-right: 2px solid currentColor;
+  border-bottom: 2px solid currentColor;
+  transform: rotate(45deg);
+  transition: transform 0.2s ease;
+  margin-left: auto;
+}
+
+.advanced-settings[open] > summary::after {
+  transform: rotate(225deg);
+}
+
+.advanced-settings > summary:hover,
+.advanced-settings > summary:focus-visible {
+  background: rgba(37, 99, 235, 0.08);
+  outline: none;
+  box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.2);
+}
+
+.advanced-settings__content {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 1rem;
+  margin-top: 0.75rem;
+  align-items: start;
+}
+
 .control-group {
   display: flex;
   flex-direction: column;
