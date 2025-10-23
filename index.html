@@ -67,6 +67,10 @@
                 <input type="color" id="fillColor" value="#111827" />
               </div>
               <label class="checkbox">
+                <input type="checkbox" id="removeAllStrokes" />
+                すべての図形のストロークを削除
+              </label>
+              <label class="checkbox">
                 <input type="checkbox" id="lockRatio" checked />
                 アスペクト比を維持
               </label>
@@ -127,6 +131,33 @@
                 </div>
               </div>
               <button type="button" id="resizeButton" class="primary">リサイズして寸法線を追加</button>
+            </div>
+            <div class="shape-editor" id="shapeEditor" hidden>
+              <div class="shape-editor__header">
+                <h3>図形の削除</h3>
+                <div class="shape-editor__header-actions">
+                  <button type="button" id="selectAllShapes" class="ghost-button" disabled>
+                    すべて選択
+                  </button>
+                  <button type="button" id="clearShapeSelection" class="ghost-button" disabled>
+                    選択を解除
+                  </button>
+                </div>
+              </div>
+              <p class="shape-editor__status" id="shapeEditorStatus">
+                読み込まれたSVG内の図形を選択して削除できます。
+              </p>
+              <div
+                class="shape-editor__list"
+                id="shapeList"
+                role="listbox"
+                aria-multiselectable="true"
+              ></div>
+              <div class="shape-editor__actions">
+                <button type="button" id="deleteSelectedShapes" class="danger" disabled>
+                  選択した図形を削除
+                </button>
+              </div>
             </div>
             <p class="hint">
               数値を入力するとリアルタイムで寸法が反映されます。アスペクト比を維持する場合は、幅または高さを入力するだけで自動計算されます。
