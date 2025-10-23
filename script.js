@@ -39,6 +39,9 @@
   const resizeButton = document.getElementById('resizeButton');
   const backgroundColorInput = document.getElementById('backgroundColor');
   const transparentBackgroundCheckbox = document.getElementById('transparentBackground');
+  const removeCanvasBackgroundCheckbox = document.getElementById('removeCanvasBackground');
+  const applyFillColorCheckbox = document.getElementById('applyFillColor');
+  const fillColorInput = document.getElementById('fillColor');
   const showDimensionsCheckbox = document.getElementById('showDimensions');
   const showDimensionLabelsCheckbox = document.getElementById('showDimensionLabels');
   const roundDimensionValuesCheckbox = document.getElementById('roundDimensionValues');
@@ -62,6 +65,9 @@
   const drillHoleDiameterGroup = drillHoleDiameterInput
     ? drillHoleDiameterInput.closest('.control-group')
     : document.getElementById('drillHoleDiameterGroup');
+  const fillColorGroup = fillColorInput
+    ? fillColorInput.closest('.control-group')
+    : document.getElementById('fillColorGroup');
   const previewArea = document.getElementById('previewArea');
   const messageEl = document.getElementById('message');
   const downloadSvgLink = document.getElementById('downloadSvg');
@@ -214,6 +220,37 @@
     return Math.min(Math.max(value, min), max);
   }
 
+  function approxEqual(a, b, tolerance) {
+    if (!Number.isFinite(a) || !Number.isFinite(b)) {
+      return false;
+    }
+    const effectiveTolerance = Number.isFinite(tolerance)
+      ? Math.max(tolerance, 0)
+      : 0;
+    return Math.abs(a - b) <= effectiveTolerance;
+  }
+
+  function getElementBounds(element) {
+    if (!element || typeof element.getBBox !== 'function') {
+      return null;
+    }
+    try {
+      const bbox = element.getBBox();
+      if (
+        bbox &&
+        Number.isFinite(bbox.x) &&
+        Number.isFinite(bbox.y) &&
+        Number.isFinite(bbox.width) &&
+        Number.isFinite(bbox.height)
+      ) {
+        return bbox;
+      }
+    } catch (error) {
+      return null;
+    }
+    return null;
+  }
+
   function formatDimensionDisplay(value, options = {}) {
     const { round = false } = options;
     if (!Number.isFinite(value)) return '';
@@ -354,6 +391,96 @@
     return 0.2126 * linearR + 0.7152 * linearG + 0.0722 * linearB;
   }
 
+  function removeCanvasSizedShapes(svgEl, viewBox) {
+    if (!svgEl || !viewBox) {
+      return;
+    }
+    const maxDimension = Math.max(
+      Math.abs(viewBox.width) || 0,
+      Math.abs(viewBox.height) || 0
+    );
+    const tolerance = Math.max(maxDimension * 0.002, 0.5);
+    const candidates = svgEl.querySelectorAll(
+      'rect, path, polygon, polyline, circle, ellipse'
+    );
+    candidates.forEach((element) => {
+      if (
+        element.closest('defs') ||
+        element.closest('clipPath') ||
+        element.closest('mask') ||
+        element.closest('pattern')
+      ) {
+        return;
+      }
+      const bbox = getElementBounds(element);
+      if (!bbox) {
+        return;
+      }
+      const coversCanvas =
+        approxEqual(bbox.x, viewBox.minX, tolerance) &&
+        approxEqual(bbox.y, viewBox.minY, tolerance) &&
+        approxEqual(bbox.width, viewBox.width, tolerance) &&
+        approxEqual(bbox.height, viewBox.height, tolerance);
+      if (!coversCanvas) {
+        return;
+      }
+      const fillAttr = element.getAttribute('fill');
+      if (fillAttr && fillAttr.trim().toLowerCase() === 'none') {
+        return;
+      }
+      const strokeAttr = element.getAttribute('stroke');
+      if (strokeAttr && strokeAttr.trim().toLowerCase() !== 'none') {
+        return;
+      }
+      element.remove();
+    });
+  }
+
+  function applyFillColorToElements(svgEl, fillColor) {
+    if (!svgEl || !fillColor) {
+      return;
+    }
+    const normalizedFill = normalizeHexColor(fillColor) || fillColor;
+    if (!normalizedFill) {
+      return;
+    }
+    const elements = svgEl.querySelectorAll('*');
+    elements.forEach((element) => {
+      if (!element || element.namespaceURI !== 'http://www.w3.org/2000/svg') {
+        return;
+      }
+      const tagName = element.tagName ? element.tagName.toLowerCase() : '';
+      if (tagName === 'svg') {
+        return;
+      }
+      if (
+        tagName === 'defs' ||
+        tagName === 'style' ||
+        tagName === 'title' ||
+        tagName === 'desc' ||
+        tagName === 'metadata' ||
+        tagName === 'lineargradient' ||
+        tagName === 'radialgradient' ||
+        tagName === 'filter'
+      ) {
+        return;
+      }
+      if (
+        element.closest('defs') ||
+        element.closest('clipPath') ||
+        element.closest('mask') ||
+        element.closest('pattern')
+      ) {
+        return;
+      }
+      const fillAttr = element.getAttribute('fill');
+      if (fillAttr && fillAttr.trim().toLowerCase() === 'none') {
+        return;
+      }
+      element.setAttribute('fill', normalizedFill);
+    });
+  }
+
   function getDimensionColors(options = {}) {
     const { transparentBackground = false, backgroundColor } = options;
     const defaultStroke = '#374151';
@@ -387,6 +514,9 @@
       showDrillHoles = false,
       drillHoleOffsetMm = 20,
       drillHoleDiameterMm = 10,
+      removeCanvasBackground = false,
+      applyFillColor = false,
+      fillColorOverride = null,
     } = options;
     const metrics = getMetrics(svgEl);
     const viewBox = metrics.viewBox;
@@ -395,6 +525,28 @@
     const clone = svgEl.cloneNode(true);
     clone.removeAttribute('width');
     clone.removeAttribute('height');
+
+    const shouldAttachForProcessing =
+      removeCanvasBackground || (applyFillColor && fillColorOverride);
+
+    if (shouldAttachForProcessing) {
+      const container = ensureMeasurementContainer();
+      container.appendChild(clone);
+      try {
+        if (removeCanvasBackground) {
+          removeCanvasSizedShapes(clone, viewBox);
+        }
+        if (applyFillColor && fillColorOverride) {
+          applyFillColorToElements(clone, fillColorOverride);
+        }
+      } finally {
+        if (clone.parentNode && clone.parentNode === container) {
+          container.removeChild(clone);
+        }
+      }
+    } else if (applyFillColor && fillColorOverride) {
+      applyFillColorToElements(clone, fillColorOverride);
+    }
 
     const childMarkup = Array.from(clone.childNodes)
       .map((node) => serializer.serializeToString(node))
@@ -722,6 +874,13 @@
         showDrillHoles: showDrillHolesCheckbox ? showDrillHolesCheckbox.checked : false,
         drillHoleOffsetMm: drillHoleOffsetValue ?? 20,
         drillHoleDiameterMm: drillHoleDiameterValue ?? 10,
+        removeCanvasBackground: removeCanvasBackgroundCheckbox
+          ? removeCanvasBackgroundCheckbox.checked
+          : false,
+        applyFillColor: applyFillColorCheckbox
+          ? applyFillColorCheckbox.checked
+          : false,
+        fillColorOverride: fillColorInput ? fillColorInput.value : null,
       });
       previewArea.innerHTML = svgString;
       updateDownloads(svgString, targetWidthPx, targetHeightPx);
@@ -936,6 +1095,11 @@
     setControlGroupState(drillHoleDiameterGroup, enabled);
   };
 
+  const updateFillColorControlsState = () => {
+    const enabled = applyFillColorCheckbox ? applyFillColorCheckbox.checked : false;
+    setControlGroupState(fillColorGroup, enabled);
+  };
+
   widthInput.addEventListener('input', () => {
     const unit = unitSelect.value;
     const widthValue = parsePositiveNumber(widthInput.value);
@@ -1050,6 +1214,31 @@
     });
 
     updateBackgroundControlState();
+  }
+
+  if (removeCanvasBackgroundCheckbox) {
+    removeCanvasBackgroundCheckbox.addEventListener('change', () => {
+      refreshPreviewIfReady();
+    });
+  }
+
+  if (applyFillColorCheckbox) {
+    applyFillColorCheckbox.addEventListener('change', () => {
+      updateFillColorControlsState();
+      refreshPreviewIfReady();
+    });
+    updateFillColorControlsState();
+  } else {
+    updateFillColorControlsState();
+  }
+
+  if (fillColorInput) {
+    fillColorInput.addEventListener('input', () => {
+      if (applyFillColorCheckbox && !applyFillColorCheckbox.checked) {
+        return;
+      }
+      refreshPreviewIfReady();
+    });
   }
 
   if (showDimensionsCheckbox) {
