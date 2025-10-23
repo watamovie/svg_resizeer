@@ -261,6 +261,88 @@
     return false;
   }
 
+  function hasTransparentFill(element) {
+    if (!element) return false;
+
+    const isTransparentValue = (value) => {
+      if (typeof value !== 'string') return false;
+      const normalized = value.trim().toLowerCase();
+      if (!normalized) return false;
+      if (normalized === 'none' || normalized === 'transparent') {
+        return true;
+      }
+      if (normalized.startsWith('rgba(')) {
+        const match = normalized.match(/rgba\((?:[^,]+,){3}\s*([0-9.]+)\s*\)/);
+        if (match) {
+          const alpha = Number.parseFloat(match[1]);
+          if (Number.isFinite(alpha) && alpha === 0) {
+            return true;
+          }
+        }
+      }
+      if (normalized.startsWith('hsla(')) {
+        const match = normalized.match(/hsla\((?:[^,]+,){3}\s*([0-9.]+)\s*\)/);
+        if (match) {
+          const alpha = Number.parseFloat(match[1]);
+          if (Number.isFinite(alpha) && alpha === 0) {
+            return true;
+          }
+        }
+      }
+      if (normalized.startsWith('#')) {
+        const hex = normalized.slice(1);
+        if (hex.length === 4) {
+          const alpha = hex.charAt(3);
+          if (alpha === '0') {
+            return true;
+          }
+        } else if (hex.length === 8) {
+          const alpha = hex.slice(6);
+          if (alpha === '00') {
+            return true;
+          }
+        }
+      }
+      return false;
+    };
+
+    if (isTransparentValue(element.getAttribute('fill'))) {
+      return true;
+    }
+
+    if (element.style) {
+      if (isTransparentValue(element.style.fill)) {
+        return true;
+      }
+
+      if (element.style.fillOpacity) {
+        const opacity = Number.parseFloat(element.style.fillOpacity);
+        if (Number.isFinite(opacity) && opacity === 0) {
+          return true;
+        }
+      }
+    }
+
+    const inlineStyle = element.getAttribute('style');
+    if (typeof inlineStyle === 'string' && inlineStyle) {
+      if (/(^|;)\s*fill\s*:\s*(none|transparent)\s*(;|$)/i.test(inlineStyle)) {
+        return true;
+      }
+      if (/(^|;)\s*fill-opacity\s*:\s*0(\.0*)?\s*(;|$)/i.test(inlineStyle)) {
+        return true;
+      }
+    }
+
+    if (element.hasAttribute('fill-opacity')) {
+      const opacity = Number.parseFloat(element.getAttribute('fill-opacity'));
+      if (Number.isFinite(opacity) && opacity === 0) {
+        return true;
+      }
+    }
+
+    return false;
+  }
+
   function applyFillColor(svgEl, fillColor) {
     if (!svgEl || !fillColor) return;
     const normalizedColor = normalizeHexColor(fillColor) || fillColor;
@@ -285,6 +367,7 @@
       const tagName = element.tagName.toLowerCase();
       if (!fillableTags.has(tagName)) return;
       if (element.hasAttribute('data-generated-by')) return;
+      if (hasTransparentFill(element)) return;
       if (element.style && typeof element.style.setProperty === 'function') {
         element.style.setProperty('fill', normalizedColor);
       }
