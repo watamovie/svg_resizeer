@@ -100,6 +100,7 @@
   let measurementContainer = null;
   let selectedShapeKeys = new Set();
   let selectedRemovalColors = new Set();
+  let lastEditedDimension = 'width';
 
   function setMessage(text, isError = false) {
     messageEl.textContent = text;
@@ -1305,8 +1306,9 @@
       showDrillHoles = false,
       drillHoleOffsetMm = 20,
       drillHoleDiameterMm = 10,
+      precomputedMetrics = null,
     } = options;
-    const metrics = getMetrics(svgEl);
+    const metrics = precomputedMetrics || getMetrics(svgEl);
     const viewBox = metrics.viewBox;
     const serializer = new XMLSerializer();
 
@@ -1611,8 +1613,8 @@
     }
 
     const unit = unitSelect.value;
-    const targetWidthPx = toPx(widthValue, unit);
-    const targetHeightPx = toPx(heightValue, unit);
+    let targetWidthPx = toPx(widthValue, unit);
+    let targetHeightPx = toPx(heightValue, unit);
     const drillHoleOffsetValue = drillHoleOffsetInput
       ? parseNonNegativeNumber(drillHoleOffsetInput.value)
       : null;
@@ -1652,6 +1654,47 @@
       if (shouldRemoveAllStrokes) {
         removeAllStrokes(svgEl);
       }
+      const metrics = getMetrics(svgEl);
+      let contentRatio = null;
+      if (
+        metrics &&
+        Number.isFinite(metrics.width) &&
+        Number.isFinite(metrics.height) &&
+        metrics.width > 0 &&
+        metrics.height > 0
+      ) {
+        contentRatio = metrics.width / metrics.height;
+      }
+
+      if (lockRatio.checked && Number.isFinite(contentRatio) && contentRatio > 0) {
+        let adjusted = false;
+        if (lastEditedDimension === 'height' && Number.isFinite(targetHeightPx) && targetHeightPx > 0) {
+          const adjustedWidthPx = targetHeightPx * contentRatio;
+          if (Number.isFinite(adjustedWidthPx) && adjustedWidthPx > 0) {
+            targetWidthPx = adjustedWidthPx;
+            widthInput.value = formatNumber(fromPx(adjustedWidthPx, unit));
+            adjusted = true;
+          }
+        }
+
+        if (!adjusted && Number.isFinite(targetWidthPx) && targetWidthPx > 0) {
+          const adjustedHeightPx = targetWidthPx / contentRatio;
+          if (Number.isFinite(adjustedHeightPx) && adjustedHeightPx > 0) {
+            targetHeightPx = adjustedHeightPx;
+            heightInput.value = formatNumber(fromPx(adjustedHeightPx, unit));
+            adjusted = true;
+          }
+        }
+
+        if (!adjusted && Number.isFinite(targetHeightPx) && targetHeightPx > 0) {
+          const adjustedWidthPx = targetHeightPx * contentRatio;
+          if (Number.isFinite(adjustedWidthPx) && adjustedWidthPx > 0) {
+            targetWidthPx = adjustedWidthPx;
+            widthInput.value = formatNumber(fromPx(adjustedWidthPx, unit));
+          }
+        }
+      }
+
       const svgString = generateResizedSvg(svgEl, targetWidthPx, targetHeightPx, unit, {
         includeDimensions: showDimensionsCheckbox ? showDimensionsCheckbox.checked : true,
         showDimensionLabels: showDimensionLabelsCheckbox
@@ -1670,6 +1713,7 @@
         showDrillHoles: showDrillHolesCheckbox ? showDrillHolesCheckbox.checked : false,
         drillHoleOffsetMm: drillHoleOffsetValue ?? 20,
         drillHoleDiameterMm: drillHoleDiameterValue ?? 10,
+        precomputedMetrics: metrics,
       });
       previewArea.innerHTML = svgString;
       updateDownloads(svgString, targetWidthPx, targetHeightPx);
@@ -1677,7 +1721,18 @@
         setMessage('リサイズと寸法線の追加が完了しました。');
         goToStep('preview');
       }
-      originalRatio = targetWidthPx / targetHeightPx;
+      if (Number.isFinite(contentRatio) && contentRatio > 0) {
+        originalRatio = contentRatio;
+      } else if (
+        Number.isFinite(targetWidthPx) &&
+        Number.isFinite(targetHeightPx) &&
+        targetWidthPx > 0 &&
+        targetHeightPx > 0
+      ) {
+        originalRatio = targetWidthPx / targetHeightPx;
+      } else {
+        originalRatio = null;
+      }
       lastKnownDimensionsPx = { width: targetWidthPx, height: targetHeightPx };
     } catch (error) {
       console.error(error);
@@ -1897,7 +1952,10 @@
     setControlGroupState(drillHoleDiameterGroup, enabled);
   };
 
-  widthInput.addEventListener('input', () => {
+  widthInput.addEventListener('input', (event) => {
+    if (event && event.isTrusted) {
+      lastEditedDimension = 'width';
+    }
     const unit = unitSelect.value;
     const widthValue = parsePositiveNumber(widthInput.value);
 
@@ -1923,7 +1981,10 @@
     }
   });
 
-  heightInput.addEventListener('input', () => {
+  heightInput.addEventListener('input', (event) => {
+    if (event && event.isTrusted) {
+      lastEditedDimension = 'height';
+    }
     const unit = unitSelect.value;
     const heightValue = parsePositiveNumber(heightInput.value);
 
