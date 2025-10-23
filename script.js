@@ -38,7 +38,15 @@
   const lockRatio = document.getElementById('lockRatio');
   const resizeButton = document.getElementById('resizeButton');
   const backgroundColorInput = document.getElementById('backgroundColor');
-  const transparentBackgroundCheckbox = document.getElementById('transparentBackground');
+  const removeCanvasBackgroundCheckbox = document.getElementById(
+    'removeCanvasBackground'
+  );
+  const applyFillColorCheckbox = document.getElementById('applyFillColor');
+  const fillColorInput = document.getElementById('fillColor');
+  const fillColorGroup = document.getElementById('fillColorGroup');
+  const transparentBackgroundCheckbox = document.getElementById(
+    'transparentBackground'
+  );
   const showDimensionsCheckbox = document.getElementById('showDimensions');
   const showDimensionLabelsCheckbox = document.getElementById('showDimensionLabels');
   const roundDimensionValuesCheckbox = document.getElementById('roundDimensionValues');
@@ -180,6 +188,31 @@
     };
     if (conversion[unit]) return number * conversion[unit];
     return number;
+  }
+
+  function parseSvgDimension(value, reference) {
+    if (value == null) return null;
+    const trimmed = value.toString().trim();
+    if (!trimmed) return null;
+    if (trimmed.endsWith('%')) {
+      const percent = Number.parseFloat(trimmed.slice(0, -1));
+      if (!Number.isFinite(percent) || !Number.isFinite(reference)) {
+        return null;
+      }
+      return (percent / 100) * reference;
+    }
+    const parsed = Number.parseFloat(trimmed);
+    if (!Number.isFinite(parsed)) {
+      return null;
+    }
+    return parsed;
+  }
+
+  function approximatelyEqual(a, b, tolerance = 0.01) {
+    if (!Number.isFinite(a) || !Number.isFinite(b)) {
+      return false;
+    }
+    return Math.abs(a - b) <= tolerance;
   }
 
   function parsePositiveNumber(value) {
@@ -354,6 +387,91 @@
     return 0.2126 * linearR + 0.7152 * linearG + 0.0722 * linearB;
   }
 
+  function removeCanvasSizedBackgrounds(svgEl, metrics) {
+    if (!svgEl || !metrics || !metrics.viewBox) {
+      return;
+    }
+
+    const { viewBox } = metrics;
+    const { width, height } = viewBox;
+    if (!Number.isFinite(width) || !Number.isFinite(height)) {
+      return;
+    }
+
+    const tolerance = Math.max(Math.max(width, height) * 0.001, 0.5);
+    const rects = svgEl.querySelectorAll('rect');
+
+    rects.forEach((rect) => {
+      if (!rect || rect.hasAttribute('data-generated-by')) {
+        return;
+      }
+
+      const rectWidth = parseSvgDimension(rect.getAttribute('width'), width);
+      const rectHeight = parseSvgDimension(rect.getAttribute('height'), height);
+
+      if (
+        !Number.isFinite(rectWidth) ||
+        !Number.isFinite(rectHeight) ||
+        !approximatelyEqual(rectWidth, width, tolerance) ||
+        !approximatelyEqual(rectHeight, height, tolerance)
+      ) {
+        return;
+      }
+
+      const rectXValue = parseSvgDimension(rect.getAttribute('x'), width);
+      const rectYValue = parseSvgDimension(rect.getAttribute('y'), height);
+      const resolvedX = Number.isFinite(rectXValue) ? rectXValue : viewBox.minX;
+      const resolvedY = Number.isFinite(rectYValue) ? rectYValue : viewBox.minY;
+
+      if (
+        approximatelyEqual(resolvedX, viewBox.minX, tolerance) &&
+        approximatelyEqual(resolvedY, viewBox.minY, tolerance)
+      ) {
+        rect.remove();
+      }
+    });
+  }
+
+  function applyUniformFillColor(svgEl, fillColor) {
+    if (!svgEl || !fillColor) {
+      return;
+    }
+
+    const normalizedColor = normalizeHexColor(fillColor) || fillColor;
+    const selectableElements = ['path', 'rect', 'circle', 'ellipse', 'polygon'];
+    const elements = svgEl.querySelectorAll(selectableElements.join(','));
+
+    elements.forEach((element) => {
+      if (!element || element.closest('defs') || element.hasAttribute('data-generated-by')) {
+        return;
+      }
+
+      const attributeFill = (element.getAttribute('fill') || '').trim().toLowerCase();
+      const styleFill = element.style && element.style.fill ? element.style.fill.trim().toLowerCase() : '';
+
+      if (
+        attributeFill === 'none' ||
+        attributeFill === 'transparent' ||
+        styleFill === 'none' ||
+        styleFill === 'transparent'
+      ) {
+        return;
+      }
+
+      if (element.hasAttribute('fill-opacity')) {
+        const fillOpacity = Number.parseFloat(element.getAttribute('fill-opacity'));
+        if (Number.isFinite(fillOpacity) && fillOpacity === 0) {
+          return;
+        }
+      }
+
+      element.setAttribute('fill', normalizedColor);
+      if (element.style) {
+        element.style.fill = normalizedColor;
+      }
+    });
+  }
+
   function getDimensionColors(options = {}) {
     const { transparentBackground = false, backgroundColor } = options;
     const defaultStroke = '#374151';
@@ -387,6 +505,9 @@
       showDrillHoles = false,
       drillHoleOffsetMm = 20,
       drillHoleDiameterMm = 10,
+      removeCanvasBackground = false,
+      applyFillColor = false,
+      fillColorOverride = null,
     } = options;
     const metrics = getMetrics(svgEl);
     const viewBox = metrics.viewBox;
@@ -395,6 +516,14 @@
     const clone = svgEl.cloneNode(true);
     clone.removeAttribute('width');
     clone.removeAttribute('height');
+
+    if (removeCanvasBackground) {
+      removeCanvasSizedBackgrounds(clone, metrics);
+    }
+
+    if (applyFillColor && fillColorOverride) {
+      applyUniformFillColor(clone, fillColorOverride);
+    }
 
     const childMarkup = Array.from(clone.childNodes)
       .map((node) => serializer.serializeToString(node))
@@ -722,6 +851,16 @@
         showDrillHoles: showDrillHolesCheckbox ? showDrillHolesCheckbox.checked : false,
         drillHoleOffsetMm: drillHoleOffsetValue ?? 20,
         drillHoleDiameterMm: drillHoleDiameterValue ?? 10,
+        removeCanvasBackground: removeCanvasBackgroundCheckbox
+          ? removeCanvasBackgroundCheckbox.checked
+          : false,
+        applyFillColor: applyFillColorCheckbox
+          ? applyFillColorCheckbox.checked
+          : false,
+        fillColorOverride:
+          applyFillColorCheckbox && applyFillColorCheckbox.checked && fillColorInput
+            ? fillColorInput.value
+            : null,
       });
       previewArea.innerHTML = svgString;
       updateDownloads(svgString, targetWidthPx, targetHeightPx);
@@ -1025,6 +1164,36 @@
   if (backgroundColorInput) {
     backgroundColorInput.addEventListener('input', () => {
       if (transparentBackgroundCheckbox && transparentBackgroundCheckbox.checked) {
+        return;
+      }
+      refreshPreviewIfReady();
+    });
+  }
+
+  if (removeCanvasBackgroundCheckbox) {
+    removeCanvasBackgroundCheckbox.addEventListener('change', () => {
+      refreshPreviewIfReady();
+    });
+  }
+
+  const updateFillColorControlsState = () => {
+    const enabled = applyFillColorCheckbox ? applyFillColorCheckbox.checked : false;
+    setControlGroupState(fillColorGroup, enabled);
+  };
+
+  if (applyFillColorCheckbox) {
+    applyFillColorCheckbox.addEventListener('change', () => {
+      updateFillColorControlsState();
+      refreshPreviewIfReady();
+    });
+    updateFillColorControlsState();
+  } else if (fillColorGroup) {
+    setControlGroupState(fillColorGroup, true);
+  }
+
+  if (fillColorInput) {
+    fillColorInput.addEventListener('input', () => {
+      if (applyFillColorCheckbox && !applyFillColorCheckbox.checked) {
         return;
       }
       refreshPreviewIfReady();
