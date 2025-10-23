@@ -100,6 +100,7 @@
   let measurementContainer = null;
   let selectedShapeKeys = new Set();
   let selectedRemovalColors = new Set();
+  let lastEditedDimension = 'width';
 
   function setMessage(text, isError = false) {
     messageEl.textContent = text;
@@ -1224,6 +1225,7 @@
     if (metrics.width && metrics.height) {
       originalRatio = metrics.width / metrics.height;
       lastKnownDimensionsPx = { width: metrics.width, height: metrics.height };
+      lastEditedDimension = 'width';
     }
   }
 
@@ -1294,7 +1296,14 @@
     return { stroke: defaultStroke, text: defaultText };
   }
 
-  function generateResizedSvg(svgEl, targetWidthPx, targetHeightPx, unit, options = {}) {
+  function generateResizedSvg(
+    svgEl,
+    targetWidthPx,
+    targetHeightPx,
+    unit,
+    options = {},
+    precomputedMetrics = null
+  ) {
     const {
       includeDimensions = true,
       showDimensionLabels = true,
@@ -1306,7 +1315,7 @@
       drillHoleOffsetMm = 20,
       drillHoleDiameterMm = 10,
     } = options;
-    const metrics = getMetrics(svgEl);
+    const metrics = precomputedMetrics || getMetrics(svgEl);
     const viewBox = metrics.viewBox;
     const serializer = new XMLSerializer();
 
@@ -1611,8 +1620,8 @@
     }
 
     const unit = unitSelect.value;
-    const targetWidthPx = toPx(widthValue, unit);
-    const targetHeightPx = toPx(heightValue, unit);
+    let targetWidthPx = toPx(widthValue, unit);
+    let targetHeightPx = toPx(heightValue, unit);
     const drillHoleOffsetValue = drillHoleOffsetInput
       ? parseNonNegativeNumber(drillHoleOffsetInput.value)
       : null;
@@ -1652,25 +1661,59 @@
       if (shouldRemoveAllStrokes) {
         removeAllStrokes(svgEl);
       }
-      const svgString = generateResizedSvg(svgEl, targetWidthPx, targetHeightPx, unit, {
-        includeDimensions: showDimensionsCheckbox ? showDimensionsCheckbox.checked : true,
-        showDimensionLabels: showDimensionLabelsCheckbox
-          ? showDimensionLabelsCheckbox.checked
-          : true,
-        roundDimensionDisplay: roundDimensionValuesCheckbox
-          ? roundDimensionValuesCheckbox.checked
-          : false,
-        backgroundColor: backgroundColorInput ? backgroundColorInput.value : '#ffffff',
-        transparentBackground: transparentBackgroundCheckbox
-          ? transparentBackgroundCheckbox.checked
-          : false,
-        dimensionTextScale: dimensionFontSizeSlider
-          ? Math.max(parseFloat(dimensionFontSizeSlider.value) / 100, 0.2)
-          : 1,
-        showDrillHoles: showDrillHolesCheckbox ? showDrillHolesCheckbox.checked : false,
-        drillHoleOffsetMm: drillHoleOffsetValue ?? 20,
-        drillHoleDiameterMm: drillHoleDiameterValue ?? 10,
-      });
+      const metrics = getMetrics(svgEl);
+      const hasValidMetrics =
+        metrics &&
+        Number.isFinite(metrics.width) &&
+        Number.isFinite(metrics.height) &&
+        metrics.width > 0 &&
+        metrics.height > 0;
+
+      if (hasValidMetrics && lockRatio && lockRatio.checked) {
+        const contentRatio = metrics.width / metrics.height;
+        if (Number.isFinite(contentRatio) && contentRatio > 0) {
+          if (lastEditedDimension === 'height') {
+            const adjustedWidthPx = targetHeightPx * contentRatio;
+            if (Number.isFinite(adjustedWidthPx) && adjustedWidthPx > 0) {
+              targetWidthPx = adjustedWidthPx;
+              widthInput.value = formatNumber(fromPx(targetWidthPx, unit));
+            }
+          } else {
+            const adjustedHeightPx = targetWidthPx / contentRatio;
+            if (Number.isFinite(adjustedHeightPx) && adjustedHeightPx > 0) {
+              targetHeightPx = adjustedHeightPx;
+              heightInput.value = formatNumber(fromPx(targetHeightPx, unit));
+            }
+          }
+        }
+      }
+
+      const svgString = generateResizedSvg(
+        svgEl,
+        targetWidthPx,
+        targetHeightPx,
+        unit,
+        {
+          includeDimensions: showDimensionsCheckbox ? showDimensionsCheckbox.checked : true,
+          showDimensionLabels: showDimensionLabelsCheckbox
+            ? showDimensionLabelsCheckbox.checked
+            : true,
+          roundDimensionDisplay: roundDimensionValuesCheckbox
+            ? roundDimensionValuesCheckbox.checked
+            : false,
+          backgroundColor: backgroundColorInput ? backgroundColorInput.value : '#ffffff',
+          transparentBackground: transparentBackgroundCheckbox
+            ? transparentBackgroundCheckbox.checked
+            : false,
+          dimensionTextScale: dimensionFontSizeSlider
+            ? Math.max(parseFloat(dimensionFontSizeSlider.value) / 100, 0.2)
+            : 1,
+          showDrillHoles: showDrillHolesCheckbox ? showDrillHolesCheckbox.checked : false,
+          drillHoleOffsetMm: drillHoleOffsetValue ?? 20,
+          drillHoleDiameterMm: drillHoleDiameterValue ?? 10,
+        },
+        metrics
+      );
       previewArea.innerHTML = svgString;
       updateDownloads(svgString, targetWidthPx, targetHeightPx);
       if (!silent) {
@@ -1898,6 +1941,7 @@
   };
 
   widthInput.addEventListener('input', () => {
+    lastEditedDimension = 'width';
     const unit = unitSelect.value;
     const widthValue = parsePositiveNumber(widthInput.value);
 
@@ -1924,6 +1968,7 @@
   });
 
   heightInput.addEventListener('input', () => {
+    lastEditedDimension = 'height';
     const unit = unitSelect.value;
     const heightValue = parsePositiveNumber(heightInput.value);
 
