@@ -50,14 +50,6 @@
                   <option value="px">px</option>
                 </select>
               </div>
-              <div class="control-group">
-                <label for="backgroundColor">背景色</label>
-                <input type="color" id="backgroundColor" value="#ffffff" />
-              </div>
-              <label class="checkbox">
-                <input type="checkbox" id="removeLargestShape" />
-                背景と思われる最大の図形を削除
-              </label>
               <label class="checkbox">
                 <input type="checkbox" id="overrideFillColor" />
                 すべての図形の塗りつぶし色を変更
@@ -65,22 +57,6 @@
               <div class="control-group" id="fillColorGroup">
                 <label for="fillColor">塗りつぶし色</label>
                 <input type="color" id="fillColor" value="#111827" />
-              </div>
-              <label class="checkbox">
-                <input type="checkbox" id="removeAllStrokes" />
-                すべての図形のストロークを削除
-              </label>
-              <div class="control-group control-group--full" id="shapeRemovalGroup">
-                <span class="control-group__label">削除する図形を選択</span>
-                <div
-                  id="shapeRemovalList"
-                  class="checkbox-list"
-                  role="group"
-                  aria-live="polite"
-                  aria-label="削除する図形"
-                >
-                  <p class="checkbox-list__empty">SVGを読み込むと図形がここに表示されます。</p>
-                </div>
               </div>
               <div class="control-group control-group--full" id="colorRemovalGroup">
                 <span class="control-group__label">削除する塗りつぶし色を選択</span>
@@ -94,66 +70,95 @@
                   <p class="checkbox-list__empty">SVGを読み込むと塗りつぶし色がここに表示されます。</p>
                 </div>
               </div>
-              <label class="checkbox">
-                <input type="checkbox" id="lockRatio" checked />
-                アスペクト比を維持
-              </label>
-              <label class="checkbox">
-                <input type="checkbox" id="transparentBackground" />
-                背景を透過
-              </label>
-              <label class="checkbox">
-                <input type="checkbox" id="showDimensions" checked />
-                寸法線を表示
-              </label>
-              <label class="checkbox">
-                <input type="checkbox" id="showDimensionLabels" checked />
-                寸法ラベル（「幅」「高さ」）を表示
-              </label>
-              <label class="checkbox">
-                <input type="checkbox" id="roundDimensionValues" />
-                寸法値を整数に丸める
-              </label>
-              <label class="checkbox">
-                <input type="checkbox" id="showDrillHoles" />
-                穴あけ位置を表示
-              </label>
-              <div class="control-group" id="drillHoleOffsetGroup">
-                <label for="drillHoleOffset">穴の中心と端の距離 (mm)</label>
-                <input
-                  type="number"
-                  id="drillHoleOffset"
-                  min="0"
-                  step="0.1"
-                  value="20"
-                  inputmode="decimal"
-                />
-              </div>
-              <div class="control-group" id="drillHoleDiameterGroup">
-                <label for="drillHoleDiameter">穴径 (mm)</label>
-                <input
-                  type="number"
-                  id="drillHoleDiameter"
-                  min="0.1"
-                  step="0.1"
-                  value="10"
-                  inputmode="decimal"
-                />
-              </div>
-              <div class="control-group range-group">
-                <label for="dimensionFontSize">寸法文字サイズ</label>
-                <input
-                  type="range"
-                  id="dimensionFontSize"
-                  min="50"
-                  max="200"
-                  step="10"
-                  value="100"
-                />
-                <div class="range-value" aria-live="polite">
-                  <span id="dimensionFontSizeValue">100%</span>
+              <details class="control-collapsible" id="advancedSettings">
+                <summary>その他の設定</summary>
+                <div class="control-collapsible__content">
+                  <div class="control-group">
+                    <label for="backgroundColor">背景色</label>
+                    <input type="color" id="backgroundColor" value="#ffffff" />
+                  </div>
+                  <label class="checkbox">
+                    <input type="checkbox" id="removeLargestShape" />
+                    背景と思われる最大の図形を削除
+                  </label>
+                  <div class="control-group control-group--full" id="shapeRemovalGroup">
+                    <span class="control-group__label">削除する図形を選択</span>
+                    <div
+                      id="shapeRemovalList"
+                      class="checkbox-list"
+                      role="group"
+                      aria-live="polite"
+                      aria-label="削除する図形"
+                    >
+                      <p class="checkbox-list__empty">SVGを読み込むと図形がここに表示されます。</p>
+                    </div>
+                  </div>
+                  <label class="checkbox">
+                    <input type="checkbox" id="removeAllStrokes" checked />
+                    すべての図形のストロークを削除
+                  </label>
+                  <label class="checkbox">
+                    <input type="checkbox" id="lockRatio" checked />
+                    アスペクト比を維持
+                  </label>
+                  <label class="checkbox">
+                    <input type="checkbox" id="transparentBackground" />
+                    背景を透過
+                  </label>
+                  <label class="checkbox">
+                    <input type="checkbox" id="showDimensions" checked />
+                    寸法線を表示
+                  </label>
+                  <label class="checkbox">
+                    <input type="checkbox" id="showDimensionLabels" />
+                    寸法ラベル（「幅」「高さ」）を表示
+                  </label>
+                  <label class="checkbox">
+                    <input type="checkbox" id="roundDimensionValues" checked />
+                    寸法値を整数に丸める
+                  </label>
+                  <label class="checkbox">
+                    <input type="checkbox" id="showDrillHoles" />
+                    穴あけ位置を表示
+                  </label>
+                  <div class="control-group" id="drillHoleOffsetGroup">
+                    <label for="drillHoleOffset">穴の中心と端の距離 (mm)</label>
+                    <input
+                      type="number"
+                      id="drillHoleOffset"
+                      min="0"
+                      step="0.1"
+                      value="20"
+                      inputmode="decimal"
+                    />
+                  </div>
+                  <div class="control-group" id="drillHoleDiameterGroup">
+                    <label for="drillHoleDiameter">穴径 (mm)</label>
+                    <input
+                      type="number"
+                      id="drillHoleDiameter"
+                      min="0.1"
+                      step="0.1"
+                      value="10"
+                      inputmode="decimal"
+                    />
+                  </div>
+                  <div class="control-group range-group">
+                    <label for="dimensionFontSize">寸法文字サイズ</label>
+                    <input
+                      type="range"
+                      id="dimensionFontSize"
+                      min="50"
+                      max="200"
+                      step="10"
+                      value="100"
+                    />
+                    <div class="range-value" aria-live="polite">
+                      <span id="dimensionFontSizeValue">100%</span>
+                    </div>
+                  </div>
                 </div>
-              </div>
+              </details>
               <button type="button" id="resizeButton" class="primary">リサイズして寸法線を追加</button>
             </div>
             <p class="hint">
