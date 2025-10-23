@@ -436,6 +436,102 @@ textarea:focus {
   max-height: 70vh;
 }
 
+.preview svg [data-editor-shape-id].is-highlighted {
+  filter: drop-shadow(0 0 0 2px rgba(245, 158, 11, 0.9))
+    drop-shadow(0 0 0 6px rgba(245, 158, 11, 0.35));
+}
+
+.shape-controls {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  border: 1px dashed var(--border);
+  border-radius: 0.8rem;
+  background: rgba(255, 255, 255, 0.6);
+  padding: clamp(1rem, 2.2vw, 1.4rem);
+}
+
+@media (prefers-color-scheme: dark) {
+  .shape-controls {
+    background: rgba(15, 23, 42, 0.6);
+  }
+}
+
+.shape-controls h3 {
+  margin: 0;
+  font-size: 1.15rem;
+}
+
+.shape-controls__hint {
+  margin: 0;
+  font-size: 0.9rem;
+  line-height: 1.6;
+  color: var(--muted);
+}
+
+.shape-list-container {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  max-height: 16rem;
+  overflow-y: auto;
+}
+
+.shape-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.shape-list__item {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 0.65rem;
+  padding: 0.65rem 0.8rem;
+  transition: border 0.2s ease, transform 0.2s ease, box-shadow 0.2s ease,
+    background 0.2s ease;
+}
+
+.shape-list__item:hover,
+.shape-list__item:focus-within {
+  border-color: var(--accent);
+  transform: translateY(-1px);
+  box-shadow: 0 12px 24px -20px rgba(37, 99, 235, 0.45);
+}
+
+.shape-list__item.is-removed {
+  opacity: 0.55;
+}
+
+.shape-checkbox {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  font-weight: 600;
+  cursor: pointer;
+  user-select: none;
+}
+
+.shape-checkbox span {
+  flex: 1;
+  line-height: 1.4;
+}
+
+.shape-checkbox input[type='checkbox'] {
+  width: 1rem;
+  height: 1rem;
+  accent-color: var(--accent);
+}
+
+.shape-list__empty {
+  margin: 0;
+  font-size: 0.95rem;
+  color: var(--muted);
+}
+
 .downloads {
   display: flex;
   gap: 1rem;
@@ -455,8 +551,23 @@ textarea:focus {
     background 0.2s ease, box-shadow 0.2s ease;
 }
 
+.button--secondary {
+  background: transparent;
+  color: var(--muted);
+}
+
+.button--secondary:hover {
+  color: var(--accent-strong);
+}
+
 .button[aria-disabled="true"] {
   opacity: 0.5;
+  pointer-events: none;
+}
+
+.button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
   pointer-events: none;
 }
 
