@@ -279,16 +279,118 @@
       'image',
     ]);
 
+    const trackingAttr = 'data-fill-target-id';
+    const entries = [];
+    let counter = 0;
+
     Array.from(svgEl.querySelectorAll('*')).forEach((element) => {
-      if (!element.tagName) return;
+      if (!element || !element.tagName) return;
       if (element.closest('defs')) return;
+      if (element.hasAttribute('data-generated-by')) return;
       const tagName = element.tagName.toLowerCase();
       if (!fillableTags.has(tagName)) return;
-      if (element.hasAttribute('data-generated-by')) return;
-      if (element.style && typeof element.style.setProperty === 'function') {
-        element.style.setProperty('fill', normalizedColor);
+
+      const id = `fill-${counter++}`;
+      element.setAttribute(trackingAttr, id);
+
+      const fillValue = getAttributeOrStyleValue(element, 'fill');
+      const fillColorInfo = parseCssColor(fillValue);
+      const fillOpacityValue = parseOpacityValue(
+        getAttributeOrStyleValue(element, 'fill-opacity')
+      );
+      const opacityValue = parseOpacityValue(
+        getAttributeOrStyleValue(element, 'opacity')
+      );
+      const strokeValue = getAttributeOrStyleValue(element, 'stroke');
+      const strokeColorInfo = parseCssColor(strokeValue);
+      const strokeOpacityValue = parseOpacityValue(
+        getAttributeOrStyleValue(element, 'stroke-opacity')
+      );
+      const strokeWidthRaw = getAttributeOrStyleValue(element, 'stroke-width');
+      let strokeWidthValue = null;
+      if (typeof strokeWidthRaw === 'string' && strokeWidthRaw.trim() !== '') {
+        const parsed = Number.parseFloat(strokeWidthRaw);
+        if (Number.isFinite(parsed)) {
+          strokeWidthValue = parsed;
+        }
       }
-      element.setAttribute('fill', normalizedColor);
+
+      const entry = {
+        element,
+        id,
+        fillValue,
+        fillColor: fillColorInfo,
+        fillOpacity: fillOpacityValue,
+        opacity: opacityValue,
+        strokeValue,
+        strokeColor: strokeColorInfo,
+        strokeOpacity: strokeOpacityValue,
+        strokeWidth: strokeWidthValue,
+      };
+      entry.hasVisibleStroke = hasVisibleStroke(entry);
+      entry.isEffectivelyTransparent = isFillEffectivelyTransparent(entry);
+      entry.isWhite = isColorConsideredWhite(entry.fillColor, entry.fillValue);
+      entry.bbox = null;
+      entries.push(entry);
+    });
+
+    if (!entries.length) {
+      return;
+    }
+
+    const container = ensureMeasurementContainer();
+    const clone = svgEl.cloneNode(true);
+
+    try {
+      container.appendChild(clone);
+      entries.forEach((entry) => {
+        const cloneElement = clone.querySelector(`[${trackingAttr}="${entry.id}"]`);
+        if (!cloneElement || typeof cloneElement.getBBox !== 'function') {
+          entry.bbox = null;
+          return;
+        }
+        try {
+          entry.bbox = cloneElement.getBBox();
+        } catch {
+          entry.bbox = null;
+        }
+      });
+    } finally {
+      if (clone.parentNode === container) {
+        container.removeChild(clone);
+      }
+    }
+
+    entries.forEach((entry) => {
+      if (entry.element) {
+        entry.element.removeAttribute(trackingAttr);
+      }
+    });
+
+    entries.forEach((entry) => {
+      const element = entry.element;
+      if (!element) return;
+
+      let treatAsHole = shouldKeepTransparent(entry);
+
+      if (!treatAsHole && entry.isWhite && !entry.hasVisibleStroke && entry.bbox) {
+        const containerEntry = entries.find((candidate) => {
+          if (candidate === entry) return false;
+          if (!candidate.bbox) return false;
+          if (candidate.isEffectivelyTransparent) return false;
+          if (candidate.isWhite && !candidate.hasVisibleStroke) return false;
+          return bboxContainsWithTolerance(candidate.bbox, entry.bbox);
+        });
+        if (containerEntry) {
+          treatAsHole = true;
+        }
+      }
+
+      if (treatAsHole) {
+        clearElementFill(element);
+      } else {
+        setElementFillColor(element, normalizedColor);
+      }
     });
   }
 
@@ -654,6 +756,298 @@
       return `#${hex}`;
     }
     return null;
+  }
+
+  function getInlineStyleValue(element, propertyName) {
+    if (!element || typeof propertyName !== 'string') {
+      return null;
+    }
+
+    if (
+      element.style &&
+      typeof element.style.getPropertyValue === 'function'
+    ) {
+      const styleValue = element.style.getPropertyValue(propertyName);
+      if (typeof styleValue === 'string' && styleValue.trim() !== '') {
+        return styleValue.trim();
+      }
+    }
+
+    const styleAttr = element.getAttribute('style');
+    if (typeof styleAttr !== 'string' || styleAttr.trim() === '') {
+      return null;
+    }
+
+    const declarations = styleAttr.split(';');
+    for (const declaration of declarations) {
+      if (!declaration) continue;
+      const [name, ...valueParts] = declaration.split(':');
+      if (!name || !valueParts.length) continue;
+      if (name.trim().toLowerCase() !== propertyName.toLowerCase()) continue;
+      const value = valueParts.join(':').trim();
+      if (value) {
+        return value;
+      }
+    }
+
+    return null;
+  }
+
+  function getAttributeOrStyleValue(element, attributeName, propertyName) {
+    if (!element || !attributeName) {
+      return null;
+    }
+
+    const attrValue = element.getAttribute(attributeName);
+    if (typeof attrValue === 'string') {
+      const trimmed = attrValue.trim();
+      if (trimmed !== '') {
+        return trimmed;
+      }
+    }
+
+    const lookupProperty = propertyName || attributeName;
+    return getInlineStyleValue(element, lookupProperty);
+  }
+
+  function parseOpacityValue(value) {
+    if (typeof value !== 'string') {
+      return null;
+    }
+    const trimmed = value.trim();
+    if (trimmed === '') {
+      return null;
+    }
+
+    if (/^-?\d+(?:\.\d+)?%$/.test(trimmed)) {
+      const numeric = Number.parseFloat(trimmed.replace('%', ''));
+      if (!Number.isFinite(numeric)) {
+        return null;
+      }
+      return clamp(numeric / 100, 0, 1);
+    }
+
+    const numeric = Number.parseFloat(trimmed);
+    if (!Number.isFinite(numeric)) {
+      return null;
+    }
+    return clamp(numeric, 0, 1);
+  }
+
+  function parseCssColor(value) {
+    if (typeof value !== 'string') {
+      return null;
+    }
+    const trimmed = value.trim();
+    if (trimmed === '') {
+      return null;
+    }
+
+    const lower = trimmed.toLowerCase();
+    if (lower === 'none' || lower === 'transparent') {
+      return { r: 0, g: 0, b: 0, a: 0 };
+    }
+
+    const hexMatch = lower.match(/^#([0-9a-f]{3}|[0-9a-f]{4}|[0-9a-f]{6}|[0-9a-f]{8})$/i);
+    if (hexMatch) {
+      let hex = hexMatch[1];
+      if (hex.length === 3 || hex.length === 4) {
+        hex = hex
+          .split('')
+          .map((char) => char + char)
+          .join('');
+      }
+      if (hex.length === 6 || hex.length === 8) {
+        const r = Number.parseInt(hex.slice(0, 2), 16);
+        const g = Number.parseInt(hex.slice(2, 4), 16);
+        const b = Number.parseInt(hex.slice(4, 6), 16);
+        const a = hex.length === 8 ? Number.parseInt(hex.slice(6, 8), 16) / 255 : 1;
+        if ([r, g, b, a].every((component) => Number.isFinite(component))) {
+          return { r, g, b, a };
+        }
+      }
+    }
+
+    const rgbMatch = lower.match(/^rgba?\(([^)]+)\)$/i);
+    if (rgbMatch) {
+      const parts = rgbMatch[1]
+        .split(',')
+        .map((part) => part.trim())
+        .filter((part) => part !== '');
+      if (parts.length === 3 || parts.length === 4) {
+        const parseRgbComponent = (component) => {
+          if (/%$/.test(component)) {
+            const numeric = Number.parseFloat(component.replace('%', ''));
+            if (!Number.isFinite(numeric)) {
+              return null;
+            }
+            return clamp((numeric / 100) * 255, 0, 255);
+          }
+          const numeric = Number.parseFloat(component);
+          if (!Number.isFinite(numeric)) {
+            return null;
+          }
+          return clamp(numeric, 0, 255);
+        };
+
+        const r = parseRgbComponent(parts[0]);
+        const g = parseRgbComponent(parts[1]);
+        const b = parseRgbComponent(parts[2]);
+        if (![r, g, b].every((component) => Number.isFinite(component))) {
+          return null;
+        }
+
+        let a = 1;
+        if (parts.length === 4) {
+          const alphaPart = parts[3];
+          if (/%$/.test(alphaPart)) {
+            const numeric = Number.parseFloat(alphaPart.replace('%', ''));
+            if (!Number.isFinite(numeric)) {
+              return null;
+            }
+            a = clamp(numeric / 100, 0, 1);
+          } else {
+            const numeric = Number.parseFloat(alphaPart);
+            if (!Number.isFinite(numeric)) {
+              return null;
+            }
+            a = clamp(numeric, 0, 1);
+          }
+        }
+
+        return { r, g, b, a };
+      }
+    }
+
+    return null;
+  }
+
+  function isColorConsideredWhite(color, rawValue) {
+    if (color) {
+      if (typeof color.a === 'number' && color.a <= 0.01) {
+        return false;
+      }
+      return color.r >= 245 && color.g >= 245 && color.b >= 245;
+    }
+    if (typeof rawValue !== 'string') {
+      return false;
+    }
+    const normalized = rawValue.trim().toLowerCase();
+    return normalized === 'white';
+  }
+
+  function isFillEffectivelyTransparent(entry) {
+    if (!entry) return false;
+    const value = typeof entry.fillValue === 'string' ? entry.fillValue.trim().toLowerCase() : '';
+    if (value === 'none' || value === 'transparent') {
+      return true;
+    }
+
+    let alpha = 1;
+    if (entry.fillColor && typeof entry.fillColor.a === 'number') {
+      alpha *= entry.fillColor.a;
+    }
+    if (typeof entry.fillOpacity === 'number') {
+      alpha *= entry.fillOpacity;
+    }
+    if (typeof entry.opacity === 'number') {
+      alpha *= entry.opacity;
+    }
+    return alpha <= 0.01;
+  }
+
+  function hasVisibleStroke(entry) {
+    if (!entry || typeof entry.strokeValue !== 'string') {
+      return false;
+    }
+
+    const normalized = entry.strokeValue.trim().toLowerCase();
+    if (normalized === '' || normalized === 'none' || normalized === 'transparent') {
+      return false;
+    }
+
+    if (typeof entry.strokeWidth === 'number' && entry.strokeWidth <= 0) {
+      return false;
+    }
+
+    if (normalized.startsWith('url(')) {
+      let alpha = 1;
+      if (typeof entry.strokeOpacity === 'number') {
+        alpha *= entry.strokeOpacity;
+      }
+      if (typeof entry.opacity === 'number') {
+        alpha *= entry.opacity;
+      }
+      return alpha > 0.01;
+    }
+
+    if (!entry.strokeColor) {
+      return true;
+    }
+
+    let alpha = entry.strokeColor.a;
+    if (typeof alpha !== 'number') {
+      alpha = 1;
+    }
+    if (typeof entry.strokeOpacity === 'number') {
+      alpha *= entry.strokeOpacity;
+    }
+    if (typeof entry.opacity === 'number') {
+      alpha *= entry.opacity;
+    }
+    return alpha > 0.01;
+  }
+
+  function shouldKeepTransparent(entry) {
+    if (!entry) return false;
+    if (entry.isEffectivelyTransparent) {
+      return true;
+    }
+    const value = typeof entry.fillValue === 'string' ? entry.fillValue.trim().toLowerCase() : '';
+    return value === 'none' || value === 'transparent';
+  }
+
+  function bboxContainsWithTolerance(outer, inner) {
+    if (!outer || !inner) {
+      return false;
+    }
+    const isValidBbox = (bbox) =>
+      Number.isFinite(bbox.x) &&
+      Number.isFinite(bbox.y) &&
+      Number.isFinite(bbox.width) &&
+      Number.isFinite(bbox.height);
+    if (!isValidBbox(outer) || !isValidBbox(inner)) {
+      return false;
+    }
+    const tolerance =
+      Math.max(Math.max(outer.width, outer.height), Math.max(inner.width, inner.height), 1) * 0.02;
+
+    return (
+      inner.x >= outer.x - tolerance &&
+      inner.y >= outer.y - tolerance &&
+      inner.x + inner.width <= outer.x + outer.width + tolerance &&
+      inner.y + inner.height <= outer.y + outer.height + tolerance
+    );
+  }
+
+  function clearElementFill(element) {
+    if (!element) return;
+    if (element.style && typeof element.style.setProperty === 'function') {
+      element.style.setProperty('fill', 'none');
+      if (typeof element.style.removeProperty === 'function') {
+        element.style.removeProperty('fill-opacity');
+      }
+    }
+    element.setAttribute('fill', 'none');
+    element.removeAttribute('fill-opacity');
+  }
+
+  function setElementFillColor(element, color) {
+    if (!element) return;
+    if (element.style && typeof element.style.setProperty === 'function') {
+      element.style.setProperty('fill', color);
+    }
+    element.setAttribute('fill', color);
   }
 
   function hexToRgb(hex) {
