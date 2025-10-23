@@ -67,6 +67,10 @@
                 <input type="color" id="fillColor" value="#111827" />
               </div>
               <label class="checkbox">
+                <input type="checkbox" id="removeAllStrokes" />
+                すべての図形のストロークを削除
+              </label>
+              <label class="checkbox">
                 <input type="checkbox" id="lockRatio" checked />
                 アスペクト比を維持
               </label>
@@ -138,6 +142,22 @@
           <h2>プレビュー &amp; ダウンロード</h2>
           <div id="message" role="status" aria-live="polite"></div>
           <div id="previewArea" class="preview" aria-label="リサイズされたSVGのプレビュー"></div>
+          <div class="shape-controls" aria-live="polite">
+            <h3>図形の削除</h3>
+            <p class="shape-controls__hint">
+              削除したい図形にチェックを入れるとプレビューとダウンロードから除外されます。
+              項目にマウスカーソルを合わせると、対応する図形がハイライト表示されます。
+            </p>
+            <div
+              id="shapeList"
+              class="shape-list-container"
+              role="group"
+              aria-label="削除する図形の選択"
+            ></div>
+            <button type="button" id="resetShapeSelection" class="button button--secondary" disabled>
+              選択をリセット
+            </button>
+          </div>
           <div class="downloads">
             <a id="downloadSvg" class="button" download="resized-with-dimensions.svg" aria-disabled="true">SVGをダウンロード</a>
             <a id="downloadPng" class="button" download="resized-with-dimensions.png" aria-disabled="true">PNGをダウンロード</a>

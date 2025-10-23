@@ -51,6 +51,9 @@
   const drillHoleDiameterInput = document.getElementById('drillHoleDiameter');
   const dimensionFontSizeSlider = document.getElementById('dimensionFontSize');
   const dimensionFontSizeValue = document.getElementById('dimensionFontSizeValue');
+  const removeAllStrokesCheckbox = document.getElementById('removeAllStrokes');
+  const shapeListContainer = document.getElementById('shapeList');
+  const resetShapeSelectionButton = document.getElementById('resetShapeSelection');
   const dimensionFontSizeGroup = dimensionFontSizeSlider
     ? dimensionFontSizeSlider.closest('.control-group')
     : null;
@@ -86,6 +89,30 @@
     },
   };
 
+  const SHAPE_ID_ATTR = 'data-editor-shape-id';
+  const removableShapeTags = new Set([
+    'rect',
+    'path',
+    'circle',
+    'ellipse',
+    'polygon',
+    'polyline',
+    'line',
+    'image',
+    'text',
+  ]);
+  const shapeTypeLabels = {
+    rect: '長方形',
+    path: 'パス',
+    circle: '円',
+    ellipse: '楕円',
+    polygon: '多角形',
+    polyline: '折れ線',
+    line: '線',
+    image: '画像',
+    text: 'テキスト',
+  };
+
   const MM_TO_PX = 96 / 25.4;
 
   let originalRatio = null;
@@ -93,6 +120,8 @@
   let lastKnownDimensionsPx = { width: null, height: null };
   let lastSelectedUnit = unitSelect ? unitSelect.value : 'px';
   let measurementContainer = null;
+  const removedShapeIds = new Set();
+  let currentShapeInfos = [];
 
   function setMessage(text, isError = false) {
     messageEl.textContent = text;
@@ -287,6 +316,314 @@
       element.setAttribute('fill', normalizedColor);
     });
   }
+
+  function removeAllStrokes(svgEl) {
+    if (!svgEl) return;
+    Array.from(svgEl.querySelectorAll('*')).forEach((element) => {
+      if (!element || !element.tagName) return;
+      if (element.closest('defs')) return;
+      if (element.hasAttribute('data-generated-by')) return;
+      if (element.style && typeof element.style.removeProperty === 'function') {
+        element.style.removeProperty('stroke');
+        element.style.removeProperty('stroke-width');
+        element.style.removeProperty('stroke-linecap');
+        element.style.removeProperty('stroke-linejoin');
+        element.style.removeProperty('stroke-dasharray');
+      }
+      element.removeAttribute('stroke');
+      element.removeAttribute('stroke-width');
+      element.removeAttribute('stroke-linecap');
+      element.removeAttribute('stroke-linejoin');
+      element.removeAttribute('stroke-dasharray');
+    });
+  }
+
+  function assignShapeIdentifiers(svgEl) {
+    if (!svgEl) return;
+    Array.from(svgEl.querySelectorAll(`[${SHAPE_ID_ATTR}]`)).forEach((element) => {
+      element.removeAttribute(SHAPE_ID_ATTR);
+    });
+    let counter = 0;
+    Array.from(svgEl.querySelectorAll('*')).forEach((element) => {
+      if (!element || !element.tagName) return;
+      if (element.closest('defs')) return;
+      if (element.hasAttribute('data-generated-by')) return;
+      const tagName = element.tagName.toLowerCase();
+      if (!removableShapeTags.has(tagName)) return;
+      element.setAttribute(SHAPE_ID_ATTR, `shape-${counter++}`);
+    });
+  }
+
+  function getRemovableShapeElements(svgEl) {
+    if (!svgEl) return [];
+    return Array.from(svgEl.querySelectorAll(`[${SHAPE_ID_ATTR}]`)).filter(
+      (element) =>
+        element &&
+        element.tagName &&
+        !element.closest('defs') &&
+        !element.hasAttribute('data-generated-by')
+    );
+  }
+
+  function describeShape(element) {
+    if (!element || !element.tagName) {
+      return '図形';
+    }
+    const tagName = element.tagName.toLowerCase();
+    const baseLabel = shapeTypeLabels[tagName] || tagName.toUpperCase();
+    const attr = (name) => {
+      const value = element.getAttribute(name);
+      return value && value.trim() ? value.trim() : null;
+    };
+    let details = '';
+    switch (tagName) {
+      case 'rect': {
+        const width = attr('width');
+        const height = attr('height');
+        if (width && height) {
+          details = `（${width} × ${height}）`;
+        }
+        break;
+      }
+      case 'circle': {
+        const radius = attr('r');
+        if (radius) {
+          details = `（r=${radius}）`;
+        }
+        break;
+      }
+      case 'ellipse': {
+        const rx = attr('rx');
+        const ry = attr('ry');
+        if (rx && ry) {
+          details = `（rx=${rx}, ry=${ry}）`;
+        }
+        break;
+      }
+      case 'line': {
+        const x1 = attr('x1');
+        const y1 = attr('y1');
+        const x2 = attr('x2');
+        const y2 = attr('y2');
+        if (x1 && y1 && x2 && y2) {
+          details = `（${x1},${y1} → ${x2},${y2}）`;
+        }
+        break;
+      }
+      case 'image': {
+        const width = attr('width');
+        const height = attr('height');
+        if (width && height) {
+          details = `（${width} × ${height}）`;
+        }
+        break;
+      }
+      case 'text': {
+        const sample = element.textContent
+          ? element.textContent.trim().slice(0, 12)
+          : '';
+        if (sample) {
+          details = `（"${sample}${
+            element.textContent.trim().length > 12 ? '…' : ''
+          }"）`;
+        }
+        break;
+      }
+      default:
+        break;
+    }
+    return details ? `${baseLabel}${details}` : baseLabel;
+  }
+
+  function buildShapeInfos(svgEl) {
+    const elements = getRemovableShapeElements(svgEl);
+    return elements
+      .map((element) => {
+        const id = element.getAttribute(SHAPE_ID_ATTR);
+        if (!id) return null;
+        return {
+          id,
+          label: describeShape(element),
+        };
+      })
+      .filter(Boolean);
+  }
+
+  function syncRemovedShapeIds(shapeInfos) {
+    if (!shapeInfos || !shapeInfos.length) {
+      if (removedShapeIds.size) {
+        removedShapeIds.clear();
+        return true;
+      }
+      return false;
+    }
+    const validIds = new Set(shapeInfos.map((info) => info.id));
+    let changed = false;
+    Array.from(removedShapeIds).forEach((id) => {
+      if (!validIds.has(id)) {
+        removedShapeIds.delete(id);
+        changed = true;
+      }
+    });
+    return changed;
+  }
+
+  function removeSelectedShapes(svgEl) {
+    if (!svgEl || !removedShapeIds.size) return;
+    Array.from(svgEl.querySelectorAll(`[${SHAPE_ID_ATTR}]`)).forEach((element) => {
+      if (!element) return;
+      const id = element.getAttribute(SHAPE_ID_ATTR);
+      if (!id || !removedShapeIds.has(id)) return;
+      if (element.parentNode) {
+        element.parentNode.removeChild(element);
+      }
+    });
+  }
+
+  function sanitizeSvgForDownload(svgString) {
+    if (!svgString || typeof svgString !== 'string') {
+      return svgString;
+    }
+    try {
+      const parser = new DOMParser();
+      const doc = parser.parseFromString(svgString, 'image/svg+xml');
+      if (doc.querySelector('parsererror')) {
+        return svgString;
+      }
+      doc.querySelectorAll(`[${SHAPE_ID_ATTR}]`).forEach((element) => {
+        element.removeAttribute(SHAPE_ID_ATTR);
+      });
+      const serializer = new XMLSerializer();
+      const root = doc.documentElement;
+      return root ? serializer.serializeToString(root) : svgString;
+    } catch (error) {
+      console.warn('Failed to sanitize SVG for download', error);
+      return svgString;
+    }
+  }
+
+  function clearPreviewHighlights() {
+    if (!previewArea) return;
+    const previewSvg = previewArea.querySelector('svg');
+    if (!previewSvg) return;
+    previewSvg
+      .querySelectorAll(`[${SHAPE_ID_ATTR}].is-highlighted`)
+      .forEach((element) => {
+        element.classList.remove('is-highlighted');
+      });
+  }
+
+  function highlightShapeInPreview(shapeId) {
+    if (!shapeId || !previewArea) return;
+    const previewSvg = previewArea.querySelector('svg');
+    if (!previewSvg) return;
+    clearPreviewHighlights();
+    const target = previewSvg.querySelector(`[${SHAPE_ID_ATTR}="${shapeId}"]`);
+    if (target) {
+      target.classList.add('is-highlighted');
+    }
+  }
+
+  function updateShapeSelectionControlsState() {
+    if (!resetShapeSelectionButton) return;
+    const hasSelection = removedShapeIds.size > 0;
+    resetShapeSelectionButton.disabled = !hasSelection;
+    if (hasSelection) {
+      resetShapeSelectionButton.removeAttribute('aria-disabled');
+    } else {
+      resetShapeSelectionButton.setAttribute('aria-disabled', 'true');
+    }
+  }
+
+  function renderShapeList() {
+    if (!shapeListContainer) return;
+    shapeListContainer.innerHTML = '';
+    clearPreviewHighlights();
+    if (!currentShapeInfos.length) {
+      const emptyMessage = document.createElement('p');
+      emptyMessage.className = 'shape-list__empty';
+      emptyMessage.textContent = '削除可能な図形はありません。';
+      shapeListContainer.appendChild(emptyMessage);
+      updateShapeSelectionControlsState();
+      return;
+    }
+
+    const list = document.createElement('ul');
+    list.className = 'shape-list';
+
+    currentShapeInfos.forEach((info, index) => {
+      const item = document.createElement('li');
+      item.className = 'shape-list__item';
+      if (removedShapeIds.has(info.id)) {
+        item.classList.add('is-removed');
+      }
+
+      const label = document.createElement('label');
+      label.className = 'shape-checkbox';
+
+      const checkbox = document.createElement('input');
+      checkbox.type = 'checkbox';
+      checkbox.checked = removedShapeIds.has(info.id);
+      checkbox.dataset.shapeId = info.id;
+
+      const span = document.createElement('span');
+      span.textContent = `${index + 1}. ${info.label}`;
+
+      label.appendChild(checkbox);
+      label.appendChild(span);
+      item.appendChild(label);
+      list.appendChild(item);
+
+      const toggleState = (checked) => {
+        if (checked) {
+          removedShapeIds.add(info.id);
+          item.classList.add('is-removed');
+        } else {
+          removedShapeIds.delete(info.id);
+          item.classList.remove('is-removed');
+        }
+        updateShapeSelectionControlsState();
+        refreshPreviewIfReady();
+      };
+
+      checkbox.addEventListener('change', () => {
+        toggleState(checkbox.checked);
+      });
+
+      label.addEventListener('mouseenter', () => {
+        highlightShapeInPreview(info.id);
+      });
+      label.addEventListener('mouseleave', () => {
+        clearPreviewHighlights();
+      });
+      checkbox.addEventListener('focus', () => {
+        highlightShapeInPreview(info.id);
+      });
+      checkbox.addEventListener('blur', () => {
+        clearPreviewHighlights();
+      });
+    });
+
+    shapeListContainer.appendChild(list);
+    updateShapeSelectionControlsState();
+  }
+
+  function resetShapeRemovalState() {
+    removedShapeIds.clear();
+    currentShapeInfos = [];
+    renderShapeList();
+  }
+
+  function clearShapeSelections() {
+    if (!removedShapeIds.size) {
+      return;
+    }
+    removedShapeIds.clear();
+    renderShapeList();
+    refreshPreviewIfReady();
+  }
+
+  renderShapeList();
 
   function parseLength(value) {
     if (!value) return null;
@@ -762,7 +1099,8 @@
 
   function updateDownloads(svgString, width, height) {
     clearObjectUrls();
-    const blob = new Blob([svgString], { type: 'image/svg+xml' });
+    const safeSvgString = sanitizeSvgForDownload(svgString);
+    const blob = new Blob([safeSvgString], { type: 'image/svg+xml' });
     const url = URL.createObjectURL(blob);
     downloadSvgLink.href = url;
     downloadSvgLink.setAttribute('aria-disabled', 'false');
@@ -834,15 +1172,27 @@
       ? overrideFillColorCheckbox.checked
       : false;
     const overrideFillColorValue = fillColorInput ? fillColorInput.value : null;
+    const shouldRemoveAllStrokes = removeAllStrokesCheckbox
+      ? removeAllStrokesCheckbox.checked
+      : false;
 
     try {
       const svgEl = parseSvg(svgText);
+      assignShapeIdentifiers(svgEl);
       if (shouldRemoveLargestShape) {
         removeLargestShape(svgEl);
+      }
+      const shapeInfos = buildShapeInfos(svgEl);
+      syncRemovedShapeIds(shapeInfos);
+      currentShapeInfos = shapeInfos;
+      renderShapeList();
+      if (shouldRemoveAllStrokes) {
+        removeAllStrokes(svgEl);
       }
       if (shouldOverrideFillColor && overrideFillColorValue) {
         applyFillColor(svgEl, overrideFillColorValue);
       }
+      removeSelectedShapes(svgEl);
       const svgString = generateResizedSvg(svgEl, targetWidthPx, targetHeightPx, unit, {
         includeDimensions: showDimensionsCheckbox ? showDimensionsCheckbox.checked : true,
         showDimensionLabels: showDimensionLabelsCheckbox
@@ -863,6 +1213,7 @@
         drillHoleDiameterMm: drillHoleDiameterValue ?? 10,
       });
       previewArea.innerHTML = svgString;
+      clearPreviewHighlights();
       updateDownloads(svgString, targetWidthPx, targetHeightPx);
       if (!silent) {
         setMessage('リサイズと寸法線の追加が完了しました。');
@@ -912,6 +1263,7 @@
 
         const normalizedSvgString = svgString.trim();
         svgInput.value = normalizedSvgString;
+        resetShapeRemovalState();
         try {
           const svgEl = parseSvg(normalizedSvgString);
           const metrics = getMetrics(svgEl);
@@ -943,6 +1295,7 @@
         const contents = reader.result;
         if (typeof contents === 'string') {
           svgInput.value = contents;
+          resetShapeRemovalState();
           setMessage('SVGファイルを読み込みました。寸法を調整してリサイズしてください。');
           try {
             const svgEl = parseSvg(contents);
@@ -992,6 +1345,13 @@
     event.preventDefault();
     performResize();
   });
+
+  if (resetShapeSelectionButton) {
+    resetShapeSelectionButton.addEventListener('click', (event) => {
+      event.preventDefault();
+      clearShapeSelections();
+    });
+  }
 
   function refreshPreviewIfReady() {
     const svgText = svgInput.value.trim();
@@ -1176,6 +1536,12 @@
     });
   }
 
+  if (removeAllStrokesCheckbox) {
+    removeAllStrokesCheckbox.addEventListener('change', () => {
+      refreshPreviewIfReady();
+    });
+  }
+
   const updateFillColorControlsState = () => {
     if (!overrideFillColorCheckbox) return;
     const enabled = overrideFillColorCheckbox.checked;
@@ -1267,6 +1633,7 @@
   }
 
   svgInput.addEventListener('input', () => {
+    resetShapeRemovalState();
     const text = svgInput.value.trim();
     if (!text) {
       setMessage('');
