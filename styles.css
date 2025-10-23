@@ -217,6 +217,38 @@ textarea:focus {
   gap: 0.4rem;
 }
 
+.control-group--full {
+  grid-column: 1 / -1;
+}
+
+.control-group__label {
+  font-weight: 700;
+  font-size: 0.95rem;
+}
+
+.checkbox-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+  border: 1px dashed var(--border);
+  border-radius: 0.75rem;
+  padding: 0.75rem;
+  background: var(--surface);
+  max-height: 240px;
+  overflow-y: auto;
+}
+
+.checkbox-list__empty {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
+.control-group.is-disabled .checkbox-list {
+  opacity: 0.55;
+  pointer-events: none;
+}
+
 .control-group.range-group {
   align-self: stretch;
 }
@@ -331,6 +363,16 @@ textarea:focus {
   background: var(--surface);
   cursor: pointer;
   transition: border 0.2s ease, background 0.2s ease, color 0.2s ease;
+}
+
+.checkbox.checkbox--small {
+  padding: 0.45rem 0.6rem;
+  font-size: 0.92rem;
+  align-items: flex-start;
+}
+
+.checkbox.checkbox--small input[type='checkbox'] {
+  margin-top: 0.15rem;
 }
 
 .checkbox.is-disabled {
