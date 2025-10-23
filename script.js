@@ -1979,6 +1979,8 @@
         lastKnownDimensionsPx = dims;
       }
     }
+
+    refreshPreviewIfReady();
   });
 
   heightInput.addEventListener('input', (event) => {
@@ -2008,6 +2010,8 @@
         lastKnownDimensionsPx = dims;
       }
     }
+
+    refreshPreviewIfReady();
   });
 
   if (unitSelect) {
@@ -2041,6 +2045,14 @@
       }
 
       lastSelectedUnit = newUnit;
+
+      refreshPreviewIfReady();
+    });
+  }
+
+  if (lockRatio) {
+    lockRatio.addEventListener('change', () => {
+      refreshPreviewIfReady();
     });
   }
 
