@@ -170,8 +170,286 @@
     return null;
   }
 
+  function getColorResolverContext() {
+    if (getColorResolverContext.cache !== undefined) {
+      return getColorResolverContext.cache;
+    }
+    if (typeof document === 'undefined') {
+      getColorResolverContext.cache = null;
+      return null;
+    }
+    const canvas = document.createElement('canvas');
+    if (!canvas || typeof canvas.getContext !== 'function') {
+      getColorResolverContext.cache = null;
+      return null;
+    }
+    const context = canvas.getContext('2d');
+    getColorResolverContext.cache = context || null;
+    return getColorResolverContext.cache;
+  }
+
+  function parseColorString(value) {
+    if (typeof value !== 'string') return null;
+    const trimmed = value.trim();
+    if (!trimmed) return null;
+    const lower = trimmed.toLowerCase();
+    if (lower === 'none' || lower === 'transparent') {
+      return { type: 'none' };
+    }
+    const hex = normalizeHexColor(trimmed);
+    if (hex) {
+      return { type: 'color', hex, alpha: 1 };
+    }
+    const rgbMatch = trimmed.match(/^rgba?\(([^)]+)\)$/i);
+    if (rgbMatch) {
+      const parts = rgbMatch[1]
+        .split(',')
+        .map((part) => part.trim())
+        .filter((part) => part.length > 0);
+      if (parts.length >= 3) {
+        const r = clamp(Math.round(parseFloat(parts[0])), 0, 255);
+        const g = clamp(Math.round(parseFloat(parts[1])), 0, 255);
+        const b = clamp(Math.round(parseFloat(parts[2])), 0, 255);
+        let alpha = parts.length >= 4 ? parseFloat(parts[3]) : 1;
+        if (!Number.isFinite(alpha)) {
+          alpha = 1;
+        }
+        if (alpha <= 0) {
+          return { type: 'none' };
+        }
+        const hexColor = `#${((1 << 24) + (r << 16) + (g << 8) + b)
+          .toString(16)
+          .slice(1)}`;
+        return { type: 'color', hex: hexColor, alpha };
+      }
+    }
+    const context = getColorResolverContext();
+    if (context) {
+      const originalFillStyle = context.fillStyle;
+      try {
+        context.fillStyle = trimmed;
+        const computed = context.fillStyle;
+        if (computed) {
+          const normalized = normalizeHexColor(computed);
+          if (normalized) {
+            return { type: 'color', hex: normalized, alpha: 1 };
+          }
+        }
+      } catch {
+        // ignore invalid color strings
+      } finally {
+        context.fillStyle = originalFillStyle;
+      }
+    }
+    return null;
+  }
+
+  function hasZeroFillOpacity(element) {
+    if (!element) return false;
+    const attrValue = element.getAttribute && element.getAttribute('fill-opacity');
+    if (typeof attrValue === 'string' && attrValue.trim()) {
+      const parsed = parseFloat(attrValue);
+      if (Number.isFinite(parsed) && parsed <= 0) {
+        return true;
+      }
+    }
+    if (element.style && typeof element.style.fillOpacity === 'string') {
+      const parsed = parseFloat(element.style.fillOpacity);
+      if (Number.isFinite(parsed) && parsed <= 0) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  function getElementFillInfo(element) {
+    if (!element) return null;
+    if (hasZeroFillOpacity(element)) {
+      return { type: 'none' };
+    }
+    const attrFill = element.getAttribute && element.getAttribute('fill');
+    if (typeof attrFill === 'string' && attrFill.trim()) {
+      const parsed = parseColorString(attrFill);
+      if (parsed) {
+        return parsed;
+      }
+    }
+    if (element.style && typeof element.style.fill === 'string' && element.style.fill.trim()) {
+      const parsed = parseColorString(element.style.fill);
+      if (parsed) {
+        return parsed;
+      }
+    }
+    return null;
+  }
+
+  function getComputedFillInfo(element) {
+    if (
+      !element ||
+      typeof window === 'undefined' ||
+      typeof window.getComputedStyle !== 'function'
+    ) {
+      return null;
+    }
+    try {
+      const computed = window.getComputedStyle(element);
+      if (!computed) return null;
+      const fillValue = computed.fill || computed.getPropertyValue('fill');
+      const fillOpacityValue = computed.fillOpacity || computed.getPropertyValue('fill-opacity');
+      const opacity = parseFloat(fillOpacityValue);
+      if (Number.isFinite(opacity) && opacity <= 0) {
+        return { type: 'none' };
+      }
+      const parsed = parseColorString(fillValue);
+      if (parsed) {
+        if (parsed.type === 'color' && Number.isFinite(opacity) && opacity >= 0 && opacity < 1) {
+          if (opacity <= 0) {
+            return { type: 'none' };
+          }
+        }
+        return parsed;
+      }
+    } catch {
+      return null;
+    }
+    return null;
+  }
+
+  function getSafeBBox(element) {
+    if (!element || typeof element.getBBox !== 'function') return null;
+    try {
+      const bbox = element.getBBox();
+      if (
+        !bbox ||
+        !Number.isFinite(bbox.x) ||
+        !Number.isFinite(bbox.y) ||
+        !Number.isFinite(bbox.width) ||
+        !Number.isFinite(bbox.height) ||
+        bbox.width <= 0 ||
+        bbox.height <= 0
+      ) {
+        return null;
+      }
+      return bbox;
+    } catch {
+      return null;
+    }
+  }
+
+  function rectanglesOverlap(a, b) {
+    if (!a || !b) return false;
+    const aRight = a.x + a.width;
+    const aBottom = a.y + a.height;
+    const bRight = b.x + b.width;
+    const bBottom = b.y + b.height;
+    return aRight > b.x && bRight > a.x && aBottom > b.y && bBottom > a.y;
+  }
+
+  const fillableTags = new Set([
+    'path',
+    'rect',
+    'circle',
+    'ellipse',
+    'polygon',
+    'polyline',
+    'text',
+    'g',
+    'use',
+    'image',
+  ]);
+
+  function identifyElementsToMakeTransparent(svgEl, skipColorSet) {
+    if (!svgEl || !skipColorSet || !skipColorSet.size) {
+      return new Set();
+    }
+
+    const attrName = 'data-fill-analysis-id';
+    const candidateInfos = [];
+    const otherInfos = [];
+    let counter = 0;
+
+    Array.from(svgEl.querySelectorAll('*')).forEach((element) => {
+      if (!element || !element.tagName) return;
+      if (element.closest('defs')) return;
+      if (element.hasAttribute('data-generated-by')) return;
+
+      const tagName = element.tagName.toLowerCase();
+      if (!fillableTags.has(tagName)) return;
+
+      const attrFill = element.getAttribute('fill');
+      if (typeof attrFill === 'string' && /url\(/i.test(attrFill)) {
+        return;
+      }
+      const styleFill =
+        element.style && typeof element.style.fill === 'string' ? element.style.fill : null;
+      if (typeof styleFill === 'string' && /url\(/i.test(styleFill)) {
+        return;
+      }
+
+      const fillInfo = getElementFillInfo(element);
+      if (!fillInfo || fillInfo.type === 'none') {
+        return;
+      }
+
+      const info = { element, id: `fill-analysis-${counter++}`, bbox: null };
+      if (fillInfo.type === 'color' && skipColorSet.has(fillInfo.hex)) {
+        candidateInfos.push(info);
+      } else {
+        otherInfos.push(info);
+      }
+    });
+
+    if (!candidateInfos.length || !otherInfos.length) {
+      return new Set();
+    }
+
+    const allInfos = candidateInfos.concat(otherInfos);
+    allInfos.forEach((info) => {
+      info.element.setAttribute(attrName, info.id);
+    });
+
+    const container = ensureMeasurementContainer();
+    const clone = svgEl.cloneNode(true);
+    if (!clone.hasAttribute('xmlns')) {
+      clone.setAttribute('xmlns', 'http://www.w3.org/2000/svg');
+    }
+    container.appendChild(clone);
+
+    candidateInfos.forEach((info) => {
+      const cloneElement = clone.querySelector(`[${attrName}="${info.id}"]`);
+      info.bbox = getSafeBBox(cloneElement);
+    });
+
+    otherInfos.forEach((info) => {
+      const cloneElement = clone.querySelector(`[${attrName}="${info.id}"]`);
+      info.bbox = getSafeBBox(cloneElement);
+    });
+
+    if (clone.parentNode === container) {
+      container.removeChild(clone);
+    }
+
+    allInfos.forEach((info) => {
+      info.element.removeAttribute(attrName);
+    });
+
+    const transparentElements = new Set();
+    candidateInfos.forEach((candidate) => {
+      if (!candidate.bbox) return;
+      const overlaps = otherInfos.some((other) => {
+        if (!other.bbox) return false;
+        return rectanglesOverlap(candidate.bbox, other.bbox);
+      });
+      if (overlaps) {
+        transparentElements.add(candidate.element);
+      }
+    });
+
+    return transparentElements;
+  }
+
   function removeLargestShape(svgEl) {
-    if (!svgEl) return false;
+    if (!svgEl) return { removed: false, fill: null };
     const candidateTags = new Set([
       'rect',
       'path',
@@ -192,7 +470,7 @@
     });
 
     if (!trackedElements.length) {
-      return false;
+      return { removed: false, fill: null };
     }
 
     const container = ensureMeasurementContainer();
@@ -204,6 +482,7 @@
 
     let largestElement = null;
     let largestArea = 0;
+    let largestElementFill = null;
 
     try {
       trackedElements.forEach((originalElement) => {
@@ -238,6 +517,11 @@
         if (area > largestArea) {
           largestArea = area;
           largestElement = originalElement;
+          let fillInfo = getElementFillInfo(originalElement);
+          if (!fillInfo || fillInfo.type !== 'color') {
+            fillInfo = getElementFillInfo(cloneElement) || getComputedFillInfo(cloneElement);
+          }
+          largestElementFill = fillInfo && fillInfo.type === 'color' ? fillInfo.hex : null;
         }
       });
     } finally {
@@ -249,46 +533,101 @@
       });
     }
 
-    if (!largestElement) {
-      return false;
+    if (!largestElement || !largestElement.parentNode) {
+      return { removed: false, fill: null };
     }
 
-    if (largestElement.parentNode) {
-      largestElement.parentNode.removeChild(largestElement);
-      return true;
-    }
-
-    return false;
+    largestElement.parentNode.removeChild(largestElement);
+    return { removed: true, fill: largestElementFill };
   }
 
-  function applyFillColor(svgEl, fillColor) {
+  function applyFillColor(svgEl, fillColor, options = {}) {
     if (!svgEl || !fillColor) return;
-    const normalizedColor = normalizeHexColor(fillColor) || fillColor;
+    const { skipFillColors = [] } = options;
+
+    const fillColorInfo = parseColorString(fillColor);
+    const normalizedColor =
+      (fillColorInfo && fillColorInfo.type === 'color' && fillColorInfo.hex) ||
+      normalizeHexColor(fillColor) ||
+      fillColor;
     if (!normalizedColor) return;
 
-    const fillableTags = new Set([
-      'path',
-      'rect',
-      'circle',
-      'ellipse',
-      'polygon',
-      'polyline',
-      'text',
-      'g',
-      'use',
-      'image',
-    ]);
+    const skipSet = new Set();
+    (skipFillColors || []).forEach((value) => {
+      const info = parseColorString(value);
+      if (info && info.type === 'color') {
+        skipSet.add(info.hex);
+      }
+    });
+
+    const transparentElements = skipSet.size
+      ? identifyElementsToMakeTransparent(svgEl, skipSet)
+      : null;
 
     Array.from(svgEl.querySelectorAll('*')).forEach((element) => {
-      if (!element.tagName) return;
+      if (!element || !element.tagName) return;
       if (element.closest('defs')) return;
+      if (element.hasAttribute('data-generated-by')) return;
+
       const tagName = element.tagName.toLowerCase();
       if (!fillableTags.has(tagName)) return;
-      if (element.hasAttribute('data-generated-by')) return;
+
+      const attrFill = element.getAttribute('fill');
+      if (typeof attrFill === 'string' && /url\(/i.test(attrFill)) {
+        return;
+      }
+      const styleFill =
+        element.style && typeof element.style.fill === 'string' ? element.style.fill : null;
+      if (typeof styleFill === 'string' && /url\(/i.test(styleFill)) {
+        return;
+      }
+
+      const fillInfo = getElementFillInfo(element);
+      if (fillInfo && fillInfo.type === 'none') {
+        if (element.style && typeof element.style.setProperty === 'function') {
+          element.style.setProperty('fill', 'none');
+        }
+        element.setAttribute('fill', 'none');
+        return;
+      }
+
+      const shouldMakeTransparent =
+        transparentElements && transparentElements.has(element);
+
+      if (shouldMakeTransparent) {
+        if (element.style && typeof element.style.setProperty === 'function') {
+          element.style.setProperty('fill', 'none');
+          if (typeof element.style.removeProperty === 'function') {
+            element.style.removeProperty('fill-opacity');
+          }
+        }
+        element.setAttribute('fill', 'none');
+        element.removeAttribute('fill-opacity');
+        return;
+      }
+
+      const attrOpacity = element.getAttribute('fill-opacity');
+      if (typeof attrOpacity === 'string' && attrOpacity.trim()) {
+        const parsedOpacity = parseFloat(attrOpacity);
+        if (Number.isFinite(parsedOpacity) && parsedOpacity <= 0) {
+          return;
+        }
+      }
+      if (element.style && typeof element.style.fillOpacity === 'string') {
+        const parsedOpacity = parseFloat(element.style.fillOpacity);
+        if (Number.isFinite(parsedOpacity) && parsedOpacity <= 0) {
+          return;
+        }
+      }
+
       if (element.style && typeof element.style.setProperty === 'function') {
         element.style.setProperty('fill', normalizedColor);
+        if (typeof element.style.removeProperty === 'function') {
+          element.style.removeProperty('fill-opacity');
+        }
       }
       element.setAttribute('fill', normalizedColor);
+      element.removeAttribute('fill-opacity');
     });
   }
 
@@ -643,7 +982,7 @@
 
   function normalizeHexColor(value) {
     if (typeof value !== 'string') return null;
-    const hex = value.trim().replace(/^#/, '');
+    const hex = value.trim().replace(/^#/, '').toLowerCase();
     if (hex.length === 3) {
       return `#${hex
         .split('')
@@ -1045,11 +1384,16 @@
       if (selectedShapeKeys && selectedShapeKeys.size) {
         removeSelectedShapes(svgEl, selectedShapeKeys);
       }
+      let removalInfo = { removed: false, fill: null };
       if (shouldRemoveLargestShape) {
-        removeLargestShape(svgEl);
+        removalInfo = removeLargestShape(svgEl) || { removed: false, fill: null };
       }
       if (shouldOverrideFillColor && overrideFillColorValue) {
-        applyFillColor(svgEl, overrideFillColorValue);
+        const skipFillColors = [];
+        if (removalInfo && removalInfo.removed && removalInfo.fill) {
+          skipFillColors.push(removalInfo.fill);
+        }
+        applyFillColor(svgEl, overrideFillColorValue, { skipFillColors });
       }
       if (shouldRemoveAllStrokes) {
         removeAllStrokes(svgEl);
