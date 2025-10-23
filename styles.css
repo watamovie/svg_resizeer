@@ -217,6 +217,14 @@ textarea:focus {
   gap: 0.4rem;
 }
 
+.control-group--full {
+  grid-column: 1 / -1;
+}
+
+.control-group .control-label {
+  font-weight: 600;
+}
+
 .control-group.range-group {
   align-self: stretch;
 }
@@ -360,6 +368,41 @@ textarea:focus {
   outline: none;
   border-color: var(--accent);
   box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.25);
+}
+
+.shape-removal-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  padding: 0.75rem;
+  border: 1px solid var(--border);
+  border-radius: 0.7rem;
+  background: var(--surface);
+  max-height: 220px;
+  overflow-y: auto;
+}
+
+.shape-removal-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.5rem;
+  font-size: 0.92rem;
+  line-height: 1.4;
+}
+
+.shape-removal-item input[type="checkbox"] {
+  margin-top: 0.2rem;
+  accent-color: var(--accent);
+}
+
+.shape-removal-item span {
+  flex: 1;
+}
+
+.shape-removal-empty {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.9rem;
 }
 
 .primary {
