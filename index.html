@@ -67,6 +67,21 @@
                 <input type="color" id="fillColor" value="#111827" />
               </div>
               <label class="checkbox">
+                <input type="checkbox" id="removeAllStrokes" />
+                すべての図形のストロークを削除
+              </label>
+              <div class="control-group control-group--full" id="shapeRemovalGroup">
+                <span class="control-label">削除する図形を選択</span>
+                <div
+                  id="shapeRemovalList"
+                  class="shape-removal-list"
+                  role="group"
+                  aria-label="削除する図形"
+                >
+                  <p class="shape-removal-empty">SVGを読み込むと図形が一覧表示されます。</p>
+                </div>
+              </div>
+              <label class="checkbox">
                 <input type="checkbox" id="lockRatio" checked />
                 アスペクト比を維持
               </label>
