@@ -71,6 +71,8 @@
   const messageEl = document.getElementById('message');
   const downloadSvgLink = document.getElementById('downloadSvg');
   const downloadPngLink = document.getElementById('downloadPng');
+  const colorRemovalGroup = document.getElementById('colorRemovalGroup');
+  const colorRemovalList = document.getElementById('colorRemovalList');
   const shapeRemovalGroup = document.getElementById('shapeRemovalGroup');
   const shapeRemovalList = document.getElementById('shapeRemovalList');
 
@@ -97,6 +99,7 @@
   let lastSelectedUnit = unitSelect ? unitSelect.value : 'px';
   let measurementContainer = null;
   let selectedShapeKeys = new Set();
+  let selectedColorHexes = new Set();
 
   function setMessage(text, isError = false) {
     messageEl.textContent = text;
@@ -751,6 +754,159 @@
     return label;
   }
 
+  function collectFillColors(svgEl) {
+    if (!svgEl) return [];
+
+    const attrName = 'data-color-collection-id';
+    const colorCounts = new Map();
+    const trackedElements = [];
+
+    Array.from(svgEl.querySelectorAll('*')).forEach((element, index) => {
+      if (!element || !element.tagName) return;
+      if (element.closest('defs')) return;
+      if (element.hasAttribute('data-generated-by')) return;
+
+      const tagName = element.tagName.toLowerCase();
+      if (!fillableTags.has(tagName)) return;
+
+      element.setAttribute(attrName, `${index}`);
+      trackedElements.push(element);
+    });
+
+    if (!trackedElements.length) {
+      return [];
+    }
+
+    const container = ensureMeasurementContainer();
+    const clone = svgEl.cloneNode(true);
+    if (!clone.hasAttribute('xmlns')) {
+      clone.setAttribute('xmlns', 'http://www.w3.org/2000/svg');
+    }
+    container.appendChild(clone);
+
+    try {
+      trackedElements.forEach((element) => {
+        const id = element.getAttribute(attrName);
+        if (!id) return;
+        const cloneElement = clone.querySelector(`[${attrName}="${id}"]`);
+        let fillInfo = getElementFillInfo(element);
+        if ((!fillInfo || fillInfo.type !== 'color') && cloneElement) {
+          fillInfo =
+            getElementFillInfo(cloneElement) || getComputedFillInfo(cloneElement);
+        }
+        if (!fillInfo || fillInfo.type !== 'color' || !fillInfo.hex) {
+          return;
+        }
+        const normalized = normalizeHexColor(fillInfo.hex);
+        if (!normalized) {
+          return;
+        }
+        const count = colorCounts.get(normalized) || 0;
+        colorCounts.set(normalized, count + 1);
+      });
+    } finally {
+      if (clone.parentNode === container) {
+        container.removeChild(clone);
+      }
+      trackedElements.forEach((element) => {
+        element.removeAttribute(attrName);
+      });
+    }
+
+    return Array.from(colorCounts.entries())
+      .map(([hex, count]) => ({ hex, count }))
+      .sort((a, b) => {
+        if (b.count !== a.count) {
+          return b.count - a.count;
+        }
+        return a.hex.localeCompare(b.hex);
+      });
+  }
+
+  function updateColorRemovalControls(svgEl = null) {
+    if (!colorRemovalList) return;
+
+    const colors = svgEl ? collectFillColors(svgEl) : [];
+    const availableHexes = new Set(colors.map((entry) => entry.hex));
+
+    if (availableHexes.size) {
+      selectedColorHexes = new Set(
+        Array.from(selectedColorHexes).filter((hex) => availableHexes.has(hex))
+      );
+    } else {
+      selectedColorHexes = new Set();
+    }
+
+    colorRemovalList.innerHTML = '';
+
+    if (!colors.length) {
+      const message = document.createElement('p');
+      message.className = 'checkbox-list__empty';
+      message.textContent = svgEl
+        ? '削除対象となる塗りつぶし色が見つかりません。'
+        : 'SVGを読み込むと使用されている塗りつぶし色が表示されます。';
+      colorRemovalList.appendChild(message);
+      if (colorRemovalGroup) {
+        setControlGroupState(colorRemovalGroup, false);
+      }
+      return;
+    }
+
+    const fragment = document.createDocumentFragment();
+
+    colors.forEach((color) => {
+      const labelEl = document.createElement('label');
+      labelEl.className = 'checkbox checkbox--small color-option';
+
+      const checkbox = document.createElement('input');
+      checkbox.type = 'checkbox';
+      checkbox.value = color.hex;
+      checkbox.checked = selectedColorHexes.has(color.hex);
+      checkbox.addEventListener('change', (event) => {
+        const target = event.target;
+        if (!target) return;
+        const normalized = normalizeHexColor(target.value);
+        if (!normalized) return;
+        if (target.checked) {
+          selectedColorHexes.add(normalized);
+        } else {
+          selectedColorHexes.delete(normalized);
+        }
+        refreshPreviewIfReady();
+      });
+
+      const swatch = document.createElement('span');
+      swatch.className = 'color-option__swatch';
+      swatch.style.backgroundColor = color.hex;
+
+      const meta = document.createElement('div');
+      meta.className = 'color-option__meta';
+
+      const code = document.createElement('span');
+      code.className = 'color-option__code';
+      code.textContent = color.hex.toUpperCase();
+
+      const count = document.createElement('span');
+      count.className = 'color-option__count';
+      count.textContent = `${color.count}個の図形`;
+
+      meta.appendChild(code);
+      meta.appendChild(count);
+
+      labelEl.appendChild(checkbox);
+      labelEl.appendChild(swatch);
+      labelEl.appendChild(meta);
+
+      fragment.appendChild(labelEl);
+    });
+
+    colorRemovalList.appendChild(fragment);
+
+    if (colorRemovalGroup) {
+      setControlGroupState(colorRemovalGroup, true);
+    }
+  }
+
   function updateShapeRemovalControls(svgEl = null) {
     if (!shapeRemovalList) return;
 
@@ -827,6 +983,66 @@
         shape.element.parentNode.removeChild(shape.element);
       }
     });
+  }
+
+  function removeShapesByFillColor(svgEl, colorHexSet) {
+    if (!svgEl || !colorHexSet || !colorHexSet.size) return;
+
+    const attrName = 'data-color-removal-id';
+    const trackedElements = [];
+
+    Array.from(svgEl.querySelectorAll('*')).forEach((element, index) => {
+      if (!element || !element.tagName) return;
+      if (element.closest('defs')) return;
+      if (element.hasAttribute('data-generated-by')) return;
+
+      const tagName = element.tagName.toLowerCase();
+      if (!fillableTags.has(tagName)) return;
+
+      element.setAttribute(attrName, `${index}`);
+      trackedElements.push(element);
+    });
+
+    if (!trackedElements.length) {
+      return;
+    }
+
+    const container = ensureMeasurementContainer();
+    const clone = svgEl.cloneNode(true);
+    if (!clone.hasAttribute('xmlns')) {
+      clone.setAttribute('xmlns', 'http://www.w3.org/2000/svg');
+    }
+    container.appendChild(clone);
+
+    try {
+      trackedElements.forEach((element) => {
+        const id = element.getAttribute(attrName);
+        if (!id) return;
+        const cloneElement = clone.querySelector(`[${attrName}="${id}"]`);
+        let fillInfo = getElementFillInfo(element);
+        if ((!fillInfo || fillInfo.type !== 'color') && cloneElement) {
+          fillInfo =
+            getElementFillInfo(cloneElement) || getComputedFillInfo(cloneElement);
+        }
+        if (!fillInfo || fillInfo.type !== 'color' || !fillInfo.hex) {
+          return;
+        }
+        const normalized = normalizeHexColor(fillInfo.hex);
+        if (!normalized || !colorHexSet.has(normalized)) {
+          return;
+        }
+        if (element.parentNode) {
+          element.parentNode.removeChild(element);
+        }
+      });
+    } finally {
+      if (clone.parentNode === container) {
+        container.removeChild(clone);
+      }
+      trackedElements.forEach((element) => {
+        element.removeAttribute(attrName);
+      });
+    }
   }
 
   function parseLength(value) {
@@ -1384,6 +1600,9 @@
       if (selectedShapeKeys && selectedShapeKeys.size) {
         removeSelectedShapes(svgEl, selectedShapeKeys);
       }
+      if (selectedColorHexes && selectedColorHexes.size) {
+        removeShapesByFillColor(svgEl, selectedColorHexes);
+      }
       let removalInfo = { removed: false, fill: null };
       if (shouldRemoveLargestShape) {
         removalInfo = removeLargestShape(svgEl) || { removed: false, fill: null };
@@ -1472,11 +1691,13 @@
           const metrics = getMetrics(svgEl);
           updateDimensionInputs(metrics);
           updateShapeRemovalControls(svgEl);
+          updateColorRemovalControls(svgEl);
           setMessage('画像ファイルをSVGとして読み込みました。寸法を調整してリサイズしてください。');
           goToStep('resize');
         } catch (error) {
           setMessage(error.message, true);
           updateShapeRemovalControls(null);
+          updateColorRemovalControls(null);
         }
       };
       image.onerror = () => {
@@ -1508,10 +1729,12 @@
             const metrics = getMetrics(svgEl);
             updateDimensionInputs(metrics);
             updateShapeRemovalControls(svgEl);
+            updateColorRemovalControls(svgEl);
             goToStep('resize');
           } catch (error) {
             setMessage(error.message, true);
             updateShapeRemovalControls(null);
+            updateColorRemovalControls(null);
           }
         }
       };
@@ -1598,6 +1821,7 @@
   }
 
   updateShapeRemovalControls(null);
+  updateColorRemovalControls(null);
 
   if (dimensionFontSizeSlider) {
     dimensionFontSizeSlider.addEventListener('input', () => {
@@ -1840,6 +2064,7 @@
     if (!text) {
       setMessage('');
       updateShapeRemovalControls(null);
+      updateColorRemovalControls(null);
       return;
     }
     try {
@@ -1847,6 +2072,7 @@
       const metrics = getMetrics(svgEl);
       updateDimensionInputs(metrics);
       updateShapeRemovalControls(svgEl);
+      updateColorRemovalControls(svgEl);
       setMessage('SVGを解析しました。寸法を調整してリサイズしてください。');
       if (activeStepId === 'input') {
         goToStep('resize');
@@ -1854,6 +2080,7 @@
     } catch (error) {
       setMessage(error.message, true);
       updateShapeRemovalControls(null);
+      updateColorRemovalControls(null);
     }
   });
 
