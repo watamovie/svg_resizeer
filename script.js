@@ -843,25 +843,31 @@
   function updateColorRemovalControls(svgEl = null) {
     if (!colorRemovalList) return;
 
-    const entries = svgEl ? collectFillColors(svgEl) : [];
-    const availableColors = new Set(entries.map((entry) => entry.hex));
-
-    if (availableColors.size) {
-      selectedRemovalColors = new Set(
-        Array.from(selectedRemovalColors).filter((hex) => availableColors.has(hex))
-      );
-    } else {
+    if (!svgEl) {
       selectedRemovalColors = new Set();
+      colorRemovalList.innerHTML = '';
+      const message = document.createElement('p');
+      message.className = 'checkbox-list__empty';
+      message.textContent = 'SVGを読み込むと塗りつぶし色がここに表示されます。';
+      colorRemovalList.appendChild(message);
+      if (colorRemovalGroup) {
+        setControlGroupState(colorRemovalGroup, false);
+      }
+      return;
     }
+
+    const entries = collectFillColors(svgEl);
+    const availableColors = new Set(entries.map((entry) => entry.hex));
+    const missingSelections = Array.from(selectedRemovalColors).filter(
+      (hex) => !availableColors.has(hex)
+    );
 
     colorRemovalList.innerHTML = '';
 
-    if (!entries.length) {
+    if (!entries.length && !missingSelections.length) {
       const message = document.createElement('p');
       message.className = 'checkbox-list__empty';
-      message.textContent = svgEl
-        ? '削除可能な塗りつぶし色が見つかりません。'
-        : 'SVGを読み込むと塗りつぶし色がここに表示されます。';
+      message.textContent = '削除可能な塗りつぶし色が見つかりません。';
       colorRemovalList.appendChild(message);
       if (colorRemovalGroup) {
         setControlGroupState(colorRemovalGroup, false);
@@ -917,6 +923,60 @@
 
       fragment.appendChild(labelEl);
     });
+
+    if (missingSelections.length) {
+      const note = document.createElement('p');
+      note.className = 'checkbox-list__note';
+      note.textContent = '以下の色は現在のSVGに存在しませんが、削除対象として保持されています。';
+      fragment.appendChild(note);
+
+      missingSelections.forEach((hex) => {
+        const labelEl = document.createElement('label');
+        labelEl.className = 'checkbox checkbox--small color-option color-option--retained';
+
+        const checkbox = document.createElement('input');
+        checkbox.type = 'checkbox';
+        checkbox.value = hex;
+        checkbox.checked = selectedRemovalColors.has(hex);
+        checkbox.addEventListener('change', (event) => {
+          const target = event.target;
+          if (!target) return;
+          const { value } = target;
+          if (!value) return;
+          if (target.checked) {
+            selectedRemovalColors.add(value);
+          } else {
+            selectedRemovalColors.delete(value);
+          }
+          refreshPreviewIfReady();
+        });
+
+        const swatch = document.createElement('span');
+        swatch.className = 'color-option__swatch color-option__swatch--retained';
+        swatch.style.backgroundColor = hex;
+        swatch.setAttribute('aria-hidden', 'true');
+
+        const textWrapper = document.createElement('span');
+        textWrapper.className = 'color-option__content';
+
+        const colorLabel = document.createElement('span');
+        colorLabel.className = 'color-option__label';
+        colorLabel.textContent = hex.toUpperCase();
+
+        const countLabel = document.createElement('span');
+        countLabel.className = 'color-option__count color-option__count--retained';
+        countLabel.textContent = '現在のSVGには存在しません（保持中）';
+
+        textWrapper.appendChild(colorLabel);
+        textWrapper.appendChild(countLabel);
+
+        labelEl.appendChild(checkbox);
+        labelEl.appendChild(swatch);
+        labelEl.appendChild(textWrapper);
+
+        fragment.appendChild(labelEl);
+      });
+    }
 
     colorRemovalList.appendChild(fragment);
 
@@ -1781,6 +1841,7 @@
           const metrics = getMetrics(svgEl);
           updateDimensionInputs(metrics);
           updateShapeRemovalControls(svgEl);
+          selectedRemovalColors = new Set();
           updateColorRemovalControls(svgEl);
           setMessage('画像ファイルをSVGとして読み込みました。寸法を調整してリサイズしてください。');
           goToStep('resize');
@@ -1819,6 +1880,7 @@
             const metrics = getMetrics(svgEl);
             updateDimensionInputs(metrics);
             updateShapeRemovalControls(svgEl);
+            selectedRemovalColors = new Set();
             updateColorRemovalControls(svgEl);
             goToStep('resize');
           } catch (error) {
