@@ -100,6 +100,7 @@
   let measurementContainer = null;
   let selectedShapeKeys = new Set();
   let selectedRemovalColors = new Set();
+  let lastDimensionEdited = null;
 
   function setMessage(text, isError = false) {
     messageEl.textContent = text;
@@ -1225,6 +1226,7 @@
       originalRatio = metrics.width / metrics.height;
       lastKnownDimensionsPx = { width: metrics.width, height: metrics.height };
     }
+    lastDimensionEdited = null;
   }
 
   function formatNumber(value) {
@@ -1294,7 +1296,14 @@
     return { stroke: defaultStroke, text: defaultText };
   }
 
-  function generateResizedSvg(svgEl, targetWidthPx, targetHeightPx, unit, options = {}) {
+  function generateResizedSvg(
+    svgEl,
+    targetWidthPx,
+    targetHeightPx,
+    unit,
+    options = {},
+    metricsOverride = null
+  ) {
     const {
       includeDimensions = true,
       showDimensionLabels = true,
@@ -1306,7 +1315,10 @@
       drillHoleOffsetMm = 20,
       drillHoleDiameterMm = 10,
     } = options;
-    const metrics = getMetrics(svgEl);
+    const metrics = metricsOverride || getMetrics(svgEl);
+    if (!metrics || !metrics.viewBox) {
+      throw new Error('寸法情報を取得できませんでした。');
+    }
     const viewBox = metrics.viewBox;
     const serializer = new XMLSerializer();
 
@@ -1611,8 +1623,8 @@
     }
 
     const unit = unitSelect.value;
-    const targetWidthPx = toPx(widthValue, unit);
-    const targetHeightPx = toPx(heightValue, unit);
+    let targetWidthPx = toPx(widthValue, unit);
+    let targetHeightPx = toPx(heightValue, unit);
     const drillHoleOffsetValue = drillHoleOffsetInput
       ? parseNonNegativeNumber(drillHoleOffsetInput.value)
       : null;
@@ -1652,6 +1664,30 @@
       if (shouldRemoveAllStrokes) {
         removeAllStrokes(svgEl);
       }
+      const metrics = getMetrics(svgEl);
+      const hasValidMetrics =
+        metrics &&
+        Number.isFinite(metrics.width) &&
+        Number.isFinite(metrics.height) &&
+        metrics.width > 0 &&
+        metrics.height > 0;
+      const metricsRatio = hasValidMetrics ? metrics.width / metrics.height : null;
+
+      if (hasValidMetrics && lockRatio && lockRatio.checked) {
+        if (
+          lastDimensionEdited === 'height' &&
+          Number.isFinite(targetHeightPx) &&
+          metricsRatio &&
+          metricsRatio > 0
+        ) {
+          targetWidthPx = targetHeightPx * metricsRatio;
+          widthInput.value = formatNumber(fromPx(targetWidthPx, unit));
+        } else if (Number.isFinite(targetWidthPx) && metricsRatio && metricsRatio > 0) {
+          targetHeightPx = targetWidthPx / metricsRatio;
+          heightInput.value = formatNumber(fromPx(targetHeightPx, unit));
+        }
+      }
+
       const svgString = generateResizedSvg(svgEl, targetWidthPx, targetHeightPx, unit, {
         includeDimensions: showDimensionsCheckbox ? showDimensionsCheckbox.checked : true,
         showDimensionLabels: showDimensionLabelsCheckbox
@@ -1670,14 +1706,22 @@
         showDrillHoles: showDrillHolesCheckbox ? showDrillHolesCheckbox.checked : false,
         drillHoleOffsetMm: drillHoleOffsetValue ?? 20,
         drillHoleDiameterMm: drillHoleDiameterValue ?? 10,
-      });
+      }, metrics);
       previewArea.innerHTML = svgString;
       updateDownloads(svgString, targetWidthPx, targetHeightPx);
       if (!silent) {
         setMessage('リサイズと寸法線の追加が完了しました。');
         goToStep('preview');
       }
-      originalRatio = targetWidthPx / targetHeightPx;
+      if (metricsRatio && Number.isFinite(metricsRatio)) {
+        originalRatio = metricsRatio;
+      } else if (
+        Number.isFinite(targetWidthPx) &&
+        Number.isFinite(targetHeightPx) &&
+        targetHeightPx > 0
+      ) {
+        originalRatio = targetWidthPx / targetHeightPx;
+      }
       lastKnownDimensionsPx = { width: targetWidthPx, height: targetHeightPx };
     } catch (error) {
       console.error(error);
@@ -1898,6 +1942,7 @@
   };
 
   widthInput.addEventListener('input', () => {
+    lastDimensionEdited = 'width';
     const unit = unitSelect.value;
     const widthValue = parsePositiveNumber(widthInput.value);
 
@@ -1924,6 +1969,7 @@
   });
 
   heightInput.addEventListener('input', () => {
+    lastDimensionEdited = 'height';
     const unit = unitSelect.value;
     const heightValue = parsePositiveNumber(heightInput.value);
 
