@@ -42,6 +42,7 @@
   const overrideFillColorCheckbox = document.getElementById('overrideFillColor');
   const fillColorInput = document.getElementById('fillColor');
   const fillColorGroup = document.getElementById('fillColorGroup');
+  const removeAllStrokesCheckbox = document.getElementById('removeAllStrokes');
   const transparentBackgroundCheckbox = document.getElementById('transparentBackground');
   const showDimensionsCheckbox = document.getElementById('showDimensions');
   const showDimensionLabelsCheckbox = document.getElementById('showDimensionLabels');
@@ -70,6 +71,8 @@
   const messageEl = document.getElementById('message');
   const downloadSvgLink = document.getElementById('downloadSvg');
   const downloadPngLink = document.getElementById('downloadPng');
+  const shapeRemovalGroup = document.getElementById('shapeRemovalGroup');
+  const shapeRemovalList = document.getElementById('shapeRemovalList');
 
   const unitConversions = {
     px: {
@@ -93,6 +96,7 @@
   let lastKnownDimensionsPx = { width: null, height: null };
   let lastSelectedUnit = unitSelect ? unitSelect.value : 'px';
   let measurementContainer = null;
+  let selectedShapeKeys = new Set();
 
   function setMessage(text, isError = false) {
     messageEl.textContent = text;
@@ -285,6 +289,204 @@
         element.style.setProperty('fill', normalizedColor);
       }
       element.setAttribute('fill', normalizedColor);
+    });
+  }
+
+  function removeAllStrokes(svgEl) {
+    if (!svgEl) return;
+    Array.from(svgEl.querySelectorAll('*')).forEach((element) => {
+      if (!element.tagName) return;
+      if (element.closest('defs')) return;
+      if (element.hasAttribute('data-generated-by')) return;
+      if (element.style && typeof element.style.setProperty === 'function') {
+        element.style.setProperty('stroke', 'none');
+        element.style.removeProperty('stroke-width');
+        element.style.removeProperty('stroke-linecap');
+        element.style.removeProperty('stroke-linejoin');
+        element.style.removeProperty('stroke-opacity');
+        element.style.removeProperty('stroke-dasharray');
+        element.style.removeProperty('stroke-dashoffset');
+      }
+      element.setAttribute('stroke', 'none');
+      element.removeAttribute('stroke-width');
+      element.removeAttribute('stroke-linecap');
+      element.removeAttribute('stroke-linejoin');
+      element.removeAttribute('stroke-opacity');
+      element.removeAttribute('stroke-dasharray');
+      element.removeAttribute('stroke-dashoffset');
+    });
+  }
+
+  const removableShapeTags = new Set([
+    'path',
+    'rect',
+    'circle',
+    'ellipse',
+    'polygon',
+    'polyline',
+    'line',
+    'text',
+    'image',
+    'g',
+    'use',
+  ]);
+
+  function getShapeSignature(element) {
+    if (!element || !element.tagName) return '';
+    const tagName = element.tagName.toLowerCase();
+    const attributes = Array.from(element.attributes || [])
+      .filter((attr) => attr && attr.name !== 'data-generated-by')
+      .map((attr) => `${attr.name}=${attr.value}`)
+      .sort()
+      .join('|');
+    let textContent = '';
+    if (tagName === 'text') {
+      textContent = (element.textContent || '').trim().replace(/\s+/g, ' ');
+    }
+    return `${tagName}|${attributes}|${textContent}`;
+  }
+
+  function collectRemovableShapes(svgEl, options = {}) {
+    if (!svgEl) return [];
+    const { includeElements = false } = options;
+    const entries = [];
+    const signatureCounts = new Map();
+
+    Array.from(svgEl.querySelectorAll('*')).forEach((element) => {
+      if (!element || !element.tagName) return;
+      if (element.closest('defs')) return;
+      if (element.hasAttribute('data-generated-by')) return;
+
+      const tagName = element.tagName.toLowerCase();
+      if (!removableShapeTags.has(tagName)) return;
+
+      const signature = getShapeSignature(element);
+      const occurrence = signatureCounts.get(signature) || 0;
+      signatureCounts.set(signature, occurrence + 1);
+
+      const textContent =
+        tagName === 'text'
+          ? (element.textContent || '').trim().replace(/\s+/g, ' ')
+          : '';
+
+      const entry = {
+        key: `${signature}::${occurrence}`,
+        tagName,
+        id: element.getAttribute('id') || '',
+        className: element.getAttribute('class') || '',
+        textContent,
+      };
+
+      if (includeElements) {
+        entry.element = element;
+      }
+
+      entries.push(entry);
+    });
+
+    return entries;
+  }
+
+  function formatShapeLabel(shape, index) {
+    const order = index + 1;
+    const tagLabel = shape.tagName ? shape.tagName.toUpperCase() : 'ELEMENT';
+    let label = `${order}. ${tagLabel}`;
+
+    if (shape.id) {
+      label += `（id: ${shape.id}）`;
+    } else if (shape.className) {
+      const firstClass = shape.className
+        .split(/\s+/)
+        .map((value) => value.trim())
+        .find((value) => value.length > 0);
+      if (firstClass) {
+        label += `（class: ${firstClass}）`;
+      }
+    }
+
+    if (shape.textContent) {
+      const snippet = shape.textContent.slice(0, 20);
+      label += `「${snippet}${shape.textContent.length > 20 ? '…' : ''}」`;
+    }
+
+    return label;
+  }
+
+  function updateShapeRemovalControls(svgEl = null) {
+    if (!shapeRemovalList) return;
+
+    const shapes = svgEl ? collectRemovableShapes(svgEl) : [];
+    const availableKeys = new Set(shapes.map((shape) => shape.key));
+
+    if (availableKeys.size) {
+      selectedShapeKeys = new Set(
+        Array.from(selectedShapeKeys).filter((key) => availableKeys.has(key))
+      );
+    } else {
+      selectedShapeKeys = new Set();
+    }
+
+    shapeRemovalList.innerHTML = '';
+
+    if (!shapes.length) {
+      const message = document.createElement('p');
+      message.className = 'checkbox-list__empty';
+      message.textContent = svgEl
+        ? '削除可能な図形が見つかりません。'
+        : 'SVGを読み込むと図形がここに表示されます。';
+      shapeRemovalList.appendChild(message);
+      if (shapeRemovalGroup) {
+        setControlGroupState(shapeRemovalGroup, false);
+      }
+      return;
+    }
+
+    const fragment = document.createDocumentFragment();
+
+    shapes.forEach((shape, index) => {
+      const labelEl = document.createElement('label');
+      labelEl.className = 'checkbox checkbox--small';
+
+      const checkbox = document.createElement('input');
+      checkbox.type = 'checkbox';
+      checkbox.dataset.shapeKey = shape.key;
+      checkbox.checked = selectedShapeKeys.has(shape.key);
+      checkbox.addEventListener('change', (event) => {
+        const target = event.target;
+        if (!target || !target.dataset) return;
+        const { shapeKey } = target.dataset;
+        if (!shapeKey) return;
+        if (target.checked) {
+          selectedShapeKeys.add(shapeKey);
+        } else {
+          selectedShapeKeys.delete(shapeKey);
+        }
+        refreshPreviewIfReady();
+      });
+
+      const text = document.createElement('span');
+      text.textContent = formatShapeLabel(shape, index);
+
+      labelEl.appendChild(checkbox);
+      labelEl.appendChild(text);
+      fragment.appendChild(labelEl);
+    });
+
+    shapeRemovalList.appendChild(fragment);
+
+    if (shapeRemovalGroup) {
+      setControlGroupState(shapeRemovalGroup, true);
+    }
+  }
+
+  function removeSelectedShapes(svgEl, shapeKeys) {
+    if (!svgEl || !shapeKeys || !shapeKeys.size) return;
+    const shapes = collectRemovableShapes(svgEl, { includeElements: true });
+    shapes.forEach((shape) => {
+      if (!shapeKeys.has(shape.key)) return;
+      if (shape.element && shape.element.parentNode) {
+        shape.element.parentNode.removeChild(shape.element);
+      }
     });
   }
 
@@ -833,15 +1035,24 @@
     const shouldOverrideFillColor = overrideFillColorCheckbox
       ? overrideFillColorCheckbox.checked
       : false;
+    const shouldRemoveAllStrokes = removeAllStrokesCheckbox
+      ? removeAllStrokesCheckbox.checked
+      : false;
     const overrideFillColorValue = fillColorInput ? fillColorInput.value : null;
 
     try {
       const svgEl = parseSvg(svgText);
+      if (selectedShapeKeys && selectedShapeKeys.size) {
+        removeSelectedShapes(svgEl, selectedShapeKeys);
+      }
       if (shouldRemoveLargestShape) {
         removeLargestShape(svgEl);
       }
       if (shouldOverrideFillColor && overrideFillColorValue) {
         applyFillColor(svgEl, overrideFillColorValue);
+      }
+      if (shouldRemoveAllStrokes) {
+        removeAllStrokes(svgEl);
       }
       const svgString = generateResizedSvg(svgEl, targetWidthPx, targetHeightPx, unit, {
         includeDimensions: showDimensionsCheckbox ? showDimensionsCheckbox.checked : true,
@@ -916,13 +1127,17 @@
           const svgEl = parseSvg(normalizedSvgString);
           const metrics = getMetrics(svgEl);
           updateDimensionInputs(metrics);
+          updateShapeRemovalControls(svgEl);
           setMessage('画像ファイルをSVGとして読み込みました。寸法を調整してリサイズしてください。');
           goToStep('resize');
         } catch (error) {
           setMessage(error.message, true);
+          updateShapeRemovalControls(null);
         }
       };
-      image.onerror = () => setMessage('画像の読み込みに失敗しました。', true);
+      image.onerror = () => {
+        setMessage('画像の読み込みに失敗しました。', true);
+      };
       image.src = dataUrl;
     };
     reader.onerror = () => setMessage('ファイルの読み込みに失敗しました。', true);
@@ -948,9 +1163,11 @@
             const svgEl = parseSvg(contents);
             const metrics = getMetrics(svgEl);
             updateDimensionInputs(metrics);
+            updateShapeRemovalControls(svgEl);
             goToStep('resize');
           } catch (error) {
             setMessage(error.message, true);
+            updateShapeRemovalControls(null);
           }
         }
       };
@@ -1035,6 +1252,8 @@
       }
     });
   }
+
+  updateShapeRemovalControls(null);
 
   if (dimensionFontSizeSlider) {
     dimensionFontSizeSlider.addEventListener('input', () => {
@@ -1176,6 +1395,12 @@
     });
   }
 
+  if (removeAllStrokesCheckbox) {
+    removeAllStrokesCheckbox.addEventListener('change', () => {
+      refreshPreviewIfReady();
+    });
+  }
+
   const updateFillColorControlsState = () => {
     if (!overrideFillColorCheckbox) return;
     const enabled = overrideFillColorCheckbox.checked;
@@ -1270,18 +1495,21 @@
     const text = svgInput.value.trim();
     if (!text) {
       setMessage('');
+      updateShapeRemovalControls(null);
       return;
     }
     try {
       const svgEl = parseSvg(text);
       const metrics = getMetrics(svgEl);
       updateDimensionInputs(metrics);
+      updateShapeRemovalControls(svgEl);
       setMessage('SVGを解析しました。寸法を調整してリサイズしてください。');
       if (activeStepId === 'input') {
         goToStep('resize');
       }
     } catch (error) {
       setMessage(error.message, true);
+      updateShapeRemovalControls(null);
     }
   });
 
