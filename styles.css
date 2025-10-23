@@ -244,6 +244,75 @@ textarea:focus {
   font-size: 0.9rem;
 }
 
+.checkbox-list--colors {
+  gap: 0.5rem;
+}
+
+.checkbox-list--colors .checkbox {
+  align-items: center;
+}
+
+.color-option {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+}
+
+.color-option__swatch {
+  position: relative;
+  width: 1.6rem;
+  height: 1.6rem;
+  border-radius: 0.45rem;
+  border: 1px solid var(--border);
+  overflow: hidden;
+  flex-shrink: 0;
+  background-image: linear-gradient(
+      45deg,
+      var(--checker-light) 25%,
+      transparent 25%,
+      transparent 75%,
+      var(--checker-light) 75%,
+      var(--checker-light)
+    ),
+    linear-gradient(
+      45deg,
+      var(--checker-light) 25%,
+      transparent 25%,
+      transparent 75%,
+      var(--checker-light) 75%,
+      var(--checker-light)
+    );
+  background-size: 10px 10px;
+  background-position: 0 0, 5px 5px;
+}
+
+.color-option__swatch::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: var(--swatch-color, transparent);
+}
+
+.color-option__info {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  font-size: 0.88rem;
+}
+
+.color-option__code {
+  font-weight: 700;
+  font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, Courier,
+    monospace;
+  letter-spacing: 0.04em;
+}
+
+.color-option__count {
+  font-size: 0.78rem;
+  color: var(--muted);
+  font-weight: 600;
+}
+
 .control-group.is-disabled .checkbox-list {
   opacity: 0.55;
   pointer-events: none;
