@@ -1649,6 +1649,9 @@
         if (removalInfo && removalInfo.removed && removalInfo.fill) {
           skipFillColors.push(removalInfo.fill);
         }
+        if (selectedRemovalColors && selectedRemovalColors.size) {
+          skipFillColors.push(...Array.from(selectedRemovalColors));
+        }
         applyFillColor(svgEl, overrideFillColorValue, { skipFillColors });
       }
       if (shouldRemoveAllStrokes) {
