@@ -98,6 +98,19 @@
   let measurementContainer = null;
   let selectedShapeKeys = new Set();
 
+  const FILLABLE_TAGS = new Set([
+    'path',
+    'rect',
+    'circle',
+    'ellipse',
+    'polygon',
+    'polyline',
+    'text',
+    'g',
+    'use',
+    'image',
+  ]);
+
   function setMessage(text, isError = false) {
     messageEl.textContent = text;
     messageEl.classList.toggle('error', isError);
@@ -171,7 +184,7 @@
   }
 
   function removeLargestShape(svgEl) {
-    if (!svgEl) return false;
+    if (!svgEl) return { removed: false, fillColor: null };
     const candidateTags = new Set([
       'rect',
       'path',
@@ -192,11 +205,13 @@
     });
 
     if (!trackedElements.length) {
-      return false;
+      return { removed: false, fillColor: null };
     }
 
     const container = ensureMeasurementContainer();
     const clone = svgEl.cloneNode(true);
+    clone.removeAttribute('width');
+    clone.removeAttribute('height');
     if (!clone.hasAttribute('xmlns')) {
       clone.setAttribute('xmlns', 'http://www.w3.org/2000/svg');
     }
@@ -204,6 +219,7 @@
 
     let largestElement = null;
     let largestArea = 0;
+    let largestElementFill = null;
 
     try {
       trackedElements.forEach((originalElement) => {
@@ -211,22 +227,8 @@
         if (!id) return;
         const cloneElement = clone.querySelector(`[${trackingAttr}="${id}"]`);
         if (!cloneElement || cloneElement.closest('defs')) return;
-        if (typeof cloneElement.getBBox !== 'function') return;
-
-        let bbox = null;
-        try {
-          bbox = cloneElement.getBBox();
-        } catch {
-          bbox = null;
-        }
-
-        if (
-          !bbox ||
-          !Number.isFinite(bbox.width) ||
-          !Number.isFinite(bbox.height) ||
-          bbox.width <= 0 ||
-          bbox.height <= 0
-        ) {
+        const bbox = getBBoxSafe(cloneElement);
+        if (!bbox || bbox.width <= 0 || bbox.height <= 0) {
           return;
         }
 
@@ -238,6 +240,8 @@
         if (area > largestArea) {
           largestArea = area;
           largestElement = originalElement;
+          largestElementFill =
+            getElementFillColor(cloneElement) || getElementFillColor(originalElement);
         }
       });
     } finally {
@@ -250,15 +254,17 @@
     }
 
     if (!largestElement) {
-      return false;
+      return { removed: false, fillColor: null };
     }
+
+    const fillColor = largestElementFill || getElementFillColor(largestElement) || null;
 
     if (largestElement.parentNode) {
       largestElement.parentNode.removeChild(largestElement);
-      return true;
+      return { removed: true, fillColor };
     }
 
-    return false;
+    return { removed: false, fillColor };
   }
 
   function applyFillColor(svgEl, fillColor) {
@@ -266,24 +272,12 @@
     const normalizedColor = normalizeHexColor(fillColor) || fillColor;
     if (!normalizedColor) return;
 
-    const fillableTags = new Set([
-      'path',
-      'rect',
-      'circle',
-      'ellipse',
-      'polygon',
-      'polyline',
-      'text',
-      'g',
-      'use',
-      'image',
-    ]);
-
     Array.from(svgEl.querySelectorAll('*')).forEach((element) => {
       if (!element.tagName) return;
       if (element.closest('defs')) return;
+      if (element.hasAttribute('data-cutout')) return;
       const tagName = element.tagName.toLowerCase();
-      if (!fillableTags.has(tagName)) return;
+      if (!FILLABLE_TAGS.has(tagName)) return;
       if (element.hasAttribute('data-generated-by')) return;
       if (element.style && typeof element.style.setProperty === 'function') {
         element.style.setProperty('fill', normalizedColor);
@@ -314,6 +308,150 @@
       element.removeAttribute('stroke-opacity');
       element.removeAttribute('stroke-dasharray');
       element.removeAttribute('stroke-dashoffset');
+    });
+  }
+
+  function bboxContains(outer, inner) {
+    if (!outer || !inner) return false;
+    const outerRight = outer.x + outer.width;
+    const outerBottom = outer.y + outer.height;
+    const innerRight = inner.x + inner.width;
+    const innerBottom = inner.y + inner.height;
+    return (
+      inner.x >= outer.x &&
+      inner.y >= outer.y &&
+      innerRight <= outerRight &&
+      innerBottom <= outerBottom
+    );
+  }
+
+  function markElementAsCutout(element) {
+    if (!element) return;
+    element.setAttribute('data-cutout', 'true');
+    element.setAttribute('fill', 'none');
+    element.setAttribute('fill-opacity', '0');
+    if (element.style && typeof element.style.setProperty === 'function') {
+      element.style.setProperty('fill', 'none');
+      element.style.setProperty('fill-opacity', '0');
+    } else if (element.style) {
+      element.style.fill = 'none';
+      element.style.fillOpacity = '0';
+    }
+  }
+
+  function convertCutoutsToTransparent(svgEl, referenceFill) {
+    if (!svgEl || !referenceFill) return false;
+    const normalizedReference = normalizeColorString(referenceFill);
+    if (!normalizedReference) return false;
+
+    const trackingAttr = 'data-cutout-candidate-id';
+    const candidates = [];
+    let hasCutouts = false;
+
+    Array.from(svgEl.querySelectorAll('*')).forEach((element, index) => {
+      if (!element || !element.tagName) return;
+      if (element.closest('defs')) return;
+      if (element.hasAttribute('data-generated-by')) return;
+      const tagName = element.tagName.toLowerCase();
+      if (!FILLABLE_TAGS.has(tagName)) return;
+      element.setAttribute(trackingAttr, `${index}`);
+      candidates.push(element);
+    });
+
+    if (!candidates.length) {
+      return false;
+    }
+
+    const container = ensureMeasurementContainer();
+    const clone = svgEl.cloneNode(true);
+    clone.removeAttribute('width');
+    clone.removeAttribute('height');
+    if (!clone.hasAttribute('xmlns')) {
+      clone.setAttribute('xmlns', 'http://www.w3.org/2000/svg');
+    }
+    container.appendChild(clone);
+
+    const entries = [];
+
+    try {
+      candidates.forEach((element) => {
+        const id = element.getAttribute(trackingAttr);
+        const cloneElement = id ? clone.querySelector(`[${trackingAttr}="${id}"]`) : null;
+        const bbox = cloneElement ? getBBoxSafe(cloneElement) : null;
+        const fill = cloneElement
+          ? getElementFillColor(cloneElement)
+          : getElementFillColor(element);
+        const stroke = cloneElement
+          ? getElementStrokeColor(cloneElement)
+          : getElementStrokeColor(element);
+
+        entries.push({
+          element,
+          bbox,
+          fill,
+          stroke,
+        });
+      });
+    } finally {
+      if (clone.parentNode === container) {
+        container.removeChild(clone);
+      }
+      candidates.forEach((element) => element.removeAttribute(trackingAttr));
+    }
+
+    if (!entries.length) return false;
+
+    const containers = entries.filter((entry) => {
+      if (!entry.bbox || entry.bbox.width <= 0 || entry.bbox.height <= 0) {
+        return false;
+      }
+      if (!entry.fill || colorsAreEqual(entry.fill, normalizedReference)) {
+        return false;
+      }
+      return true;
+    });
+
+    if (!containers.length) {
+      return false;
+    }
+
+    entries.forEach((entry) => {
+      if (!entry.fill || !colorsAreEqual(entry.fill, normalizedReference)) {
+        return;
+      }
+      if (!entry.bbox || entry.bbox.width <= 0 || entry.bbox.height <= 0) {
+        return;
+      }
+      if (entry.stroke) {
+        return;
+      }
+
+      const entryArea = entry.bbox.width * entry.bbox.height;
+      if (!Number.isFinite(entryArea) || entryArea <= 0) {
+        return;
+      }
+
+      const isContained = containers.some((containerEntry) => {
+        if (!containerEntry.bbox) return false;
+        const containerArea = containerEntry.bbox.width * containerEntry.bbox.height;
+        if (!Number.isFinite(containerArea) || containerArea <= entryArea) {
+          return false;
+        }
+        return bboxContains(containerEntry.bbox, entry.bbox);
+      });
+
+      if (isContained) {
+        markElementAsCutout(entry.element);
+        hasCutouts = true;
+      }
+    });
+    return hasCutouts;
+  }
+
+  function clearCutoutMarkers(svgEl) {
+    if (!svgEl) return;
+    Array.from(svgEl.querySelectorAll('[data-cutout]')).forEach((element) => {
+      element.removeAttribute('data-cutout');
     });
   }
 
@@ -356,6 +494,7 @@
       if (!element || !element.tagName) return;
       if (element.closest('defs')) return;
       if (element.hasAttribute('data-generated-by')) return;
+      if (element.hasAttribute('data-cutout')) return;
 
       const tagName = element.tagName.toLowerCase();
       if (!removableShapeTags.has(tagName)) return;
@@ -654,6 +793,205 @@
       return `#${hex}`;
     }
     return null;
+  }
+
+  function parseRgbComponent(component) {
+    if (typeof component !== 'string') return null;
+    const trimmed = component.trim();
+    if (!trimmed) return null;
+    if (trimmed.endsWith('%')) {
+      const percent = Number.parseFloat(trimmed.slice(0, -1));
+      if (!Number.isFinite(percent)) return null;
+      return clamp(Math.round((percent / 100) * 255), 0, 255);
+    }
+    const value = Number.parseFloat(trimmed);
+    if (!Number.isFinite(value)) return null;
+    return clamp(Math.round(value), 0, 255);
+  }
+
+  function parseRgbColor(value) {
+    if (typeof value !== 'string') return null;
+    const match = value.trim().toLowerCase().match(/^rgba?\(([^)]+)\)$/);
+    if (!match) return null;
+    const parts = match[1]
+      .split(',')
+      .map((part) => part.trim())
+      .filter((part) => part.length > 0);
+    if (parts.length < 3) return null;
+    const r = parseRgbComponent(parts[0]);
+    const g = parseRgbComponent(parts[1]);
+    const b = parseRgbComponent(parts[2]);
+    const channels = [r, g, b];
+    if (!channels.every((channel) => typeof channel === 'number' && Number.isFinite(channel))) {
+      return null;
+    }
+    let alpha = 1;
+    if (parts.length >= 4) {
+      alpha = Number.parseFloat(parts[3]);
+      if (!Number.isFinite(alpha)) {
+        return null;
+      }
+    }
+    if (alpha <= 0) {
+      return null;
+    }
+    return `#${channels
+      .map((channel) => channel.toString(16).padStart(2, '0'))
+      .join('')}`;
+  }
+
+  function normalizeColorString(value) {
+    if (typeof value !== 'string') return null;
+    const trimmed = value.trim();
+    if (!trimmed) return null;
+    const lower = trimmed.toLowerCase();
+    if (!lower || lower === 'none' || lower === 'transparent' || lower === 'inherit') {
+      return null;
+    }
+    if (lower.startsWith('url(')) {
+      return null;
+    }
+    const normalizedHex = normalizeHexColor(lower);
+    if (normalizedHex) {
+      return normalizedHex;
+    }
+    const normalizedRgb = parseRgbColor(lower);
+    if (normalizedRgb) {
+      return normalizedRgb;
+    }
+    return trimmed;
+  }
+
+  function colorsAreEqual(a, b) {
+    if (!a || !b) return false;
+    return a.toLowerCase() === b.toLowerCase();
+  }
+
+  function getComputedStyleValue(element, property) {
+    if (
+      !element ||
+      typeof window === 'undefined' ||
+      typeof window.getComputedStyle !== 'function'
+    ) {
+      return null;
+    }
+    try {
+      const computed = window.getComputedStyle(element);
+      if (!computed) return null;
+      const value = computed.getPropertyValue(property);
+      return value || null;
+    } catch (error) {
+      return null;
+    }
+  }
+
+  function getElementFillColor(element) {
+    if (!element) return null;
+    const attrValue = element.getAttribute('fill');
+    const styleValue =
+      element.style && typeof element.style.getPropertyValue === 'function'
+        ? element.style.getPropertyValue('fill') || element.style.fill || null
+        : element.style
+        ? element.style.fill
+        : null;
+    const computedValue = getComputedStyleValue(element, 'fill');
+    const color =
+      normalizeColorString(attrValue) ||
+      normalizeColorString(styleValue) ||
+      normalizeColorString(computedValue);
+
+    if (!color) {
+      return null;
+    }
+
+    const opacityValues = [
+      element.getAttribute('fill-opacity'),
+      element.style && typeof element.style.getPropertyValue === 'function'
+        ? element.style.getPropertyValue('fill-opacity') || element.style.fillOpacity || null
+        : element.style
+        ? element.style.fillOpacity
+        : null,
+      getComputedStyleValue(element, 'fill-opacity'),
+    ];
+
+    const hasTransparentOpacity = opacityValues.some((value) => {
+      if (value === null || value === undefined || value === '') {
+        return false;
+      }
+      const parsed = Number.parseFloat(value);
+      return Number.isFinite(parsed) && parsed <= 0;
+    });
+
+    if (hasTransparentOpacity) {
+      return null;
+    }
+
+    return color;
+  }
+
+  function getElementStrokeColor(element) {
+    if (!element) return null;
+    const attrValue = element.getAttribute('stroke');
+    const styleValue =
+      element.style && typeof element.style.getPropertyValue === 'function'
+        ? element.style.getPropertyValue('stroke') || element.style.stroke || null
+        : element.style
+        ? element.style.stroke
+        : null;
+    const computedValue = getComputedStyleValue(element, 'stroke');
+    const color =
+      normalizeColorString(attrValue) ||
+      normalizeColorString(styleValue) ||
+      normalizeColorString(computedValue);
+
+    if (!color) {
+      return null;
+    }
+
+    const opacityValues = [
+      element.getAttribute('stroke-opacity'),
+      element.style && typeof element.style.getPropertyValue === 'function'
+        ? element.style.getPropertyValue('stroke-opacity') || element.style.strokeOpacity || null
+        : element.style
+        ? element.style.strokeOpacity
+        : null,
+      getComputedStyleValue(element, 'stroke-opacity'),
+    ];
+
+    const hasTransparentOpacity = opacityValues.some((value) => {
+      if (value === null || value === undefined || value === '') {
+        return false;
+      }
+      const parsed = Number.parseFloat(value);
+      return Number.isFinite(parsed) && parsed <= 0;
+    });
+
+    if (hasTransparentOpacity) {
+      return null;
+    }
+
+    return color;
+  }
+
+  function getBBoxSafe(element) {
+    if (!element || typeof element.getBBox !== 'function') {
+      return null;
+    }
+    try {
+      const bbox = element.getBBox();
+      if (
+        !bbox ||
+        !Number.isFinite(bbox.x) ||
+        !Number.isFinite(bbox.y) ||
+        !Number.isFinite(bbox.width) ||
+        !Number.isFinite(bbox.height)
+      ) {
+        return null;
+      }
+      return bbox;
+    } catch (error) {
+      return null;
+    }
   }
 
   function hexToRgb(hex) {
@@ -1045,14 +1383,22 @@
       if (selectedShapeKeys && selectedShapeKeys.size) {
         removeSelectedShapes(svgEl, selectedShapeKeys);
       }
+      let cutoutsMarked = false;
       if (shouldRemoveLargestShape) {
-        removeLargestShape(svgEl);
+        const removalInfo = removeLargestShape(svgEl);
+        if (removalInfo && removalInfo.removed && removalInfo.fillColor) {
+          cutoutsMarked =
+            convertCutoutsToTransparent(svgEl, removalInfo.fillColor) || cutoutsMarked;
+        }
       }
       if (shouldOverrideFillColor && overrideFillColorValue) {
         applyFillColor(svgEl, overrideFillColorValue);
       }
       if (shouldRemoveAllStrokes) {
         removeAllStrokes(svgEl);
+      }
+      if (cutoutsMarked) {
+        clearCutoutMarkers(svgEl);
       }
       const svgString = generateResizedSvg(svgEl, targetWidthPx, targetHeightPx, unit, {
         includeDimensions: showDimensionsCheckbox ? showDimensionsCheckbox.checked : true,
