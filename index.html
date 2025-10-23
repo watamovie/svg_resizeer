@@ -55,6 +55,10 @@
                 <input type="color" id="backgroundColor" value="#ffffff" />
               </div>
               <label class="checkbox">
+                <input type="checkbox" id="removeBackgroundShapes" />
+                キャンバス全体の背景図形を削除
+              </label>
+              <label class="checkbox">
                 <input type="checkbox" id="lockRatio" checked />
                 アスペクト比を維持
               </label>
@@ -62,6 +66,14 @@
                 <input type="checkbox" id="transparentBackground" />
                 背景を透過
               </label>
+              <label class="checkbox">
+                <input type="checkbox" id="overrideFillColor" />
+                すべての図形の塗りつぶし色を変更
+              </label>
+              <div class="control-group" id="fillColorGroup">
+                <label for="fillColor">塗りつぶし色</label>
+                <input type="color" id="fillColor" value="#000000" />
+              </div>
               <label class="checkbox">
                 <input type="checkbox" id="showDimensions" checked />
                 寸法線を表示
