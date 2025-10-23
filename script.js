@@ -649,7 +649,8 @@
       }
     });
 
-    const transparentElements = skipSet.size
+    const hasSkipColors = skipSet.size > 0;
+    const transparentElements = hasSkipColors
       ? identifyElementsToMakeTransparent(svgEl, skipSet)
       : null;
 
@@ -671,7 +672,11 @@
         return;
       }
 
-      const fillInfo = getElementFillInfo(element);
+      let fillInfo = getElementFillInfo(element);
+      if (!fillInfo && hasSkipColors) {
+        fillInfo = getComputedFillInfo(element);
+      }
+
       if (fillInfo && fillInfo.type === 'none') {
         if (element.style && typeof element.style.setProperty === 'function') {
           element.style.setProperty('fill', 'none');
@@ -680,8 +685,11 @@
         return;
       }
 
+      const skipDueToColor =
+        hasSkipColors && fillInfo && fillInfo.type === 'color' && skipSet.has(fillInfo.hex);
+
       const shouldMakeTransparent =
-        transparentElements && transparentElements.has(element);
+        skipDueToColor || (transparentElements && transparentElements.has(element));
 
       if (shouldMakeTransparent) {
         if (element.style && typeof element.style.setProperty === 'function') {
@@ -1648,6 +1656,9 @@
         const skipFillColors = [];
         if (removalInfo && removalInfo.removed && removalInfo.fill) {
           skipFillColors.push(removalInfo.fill);
+        }
+        if (selectedRemovalColors && selectedRemovalColors.size) {
+          skipFillColors.push(...Array.from(selectedRemovalColors));
         }
         applyFillColor(svgEl, overrideFillColorValue, { skipFillColors });
       }
