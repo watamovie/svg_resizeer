@@ -387,6 +387,154 @@ textarea:focus {
   box-shadow: none;
 }
 
+.shape-editor {
+  margin-top: 1.25rem;
+  padding: 1rem;
+  border: 1px solid var(--border);
+  border-radius: 0.9rem;
+  background: var(--surface);
+  display: flex;
+  flex-direction: column;
+  gap: 0.85rem;
+}
+
+.shape-editor[hidden] {
+  display: none;
+}
+
+.shape-editor__header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.shape-editor__header h3 {
+  margin: 0;
+  font-size: 1.05rem;
+}
+
+.shape-editor__header-actions {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.shape-editor__status {
+  margin: 0;
+  font-size: 0.9rem;
+  color: var(--muted);
+}
+
+.shape-editor__list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  max-height: 240px;
+  overflow: auto;
+  padding-right: 0.25rem;
+}
+
+.shape-editor__item {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.55rem 0.65rem;
+  border: 1px solid var(--border);
+  border-radius: 0.7rem;
+  background: var(--panel);
+  transition: border 0.2s ease, background 0.2s ease, box-shadow 0.2s ease;
+}
+
+.shape-editor__item:hover {
+  border-color: var(--accent);
+  box-shadow: 0 10px 24px -22px rgba(37, 99, 235, 0.55);
+}
+
+.shape-editor__item input {
+  accent-color: var(--accent);
+}
+
+.shape-editor__item-label {
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: var(--text);
+  word-break: break-word;
+}
+
+.shape-editor__item.is-selected {
+  border-color: var(--accent);
+  background: rgba(37, 99, 235, 0.08);
+  box-shadow: 0 10px 24px -22px rgba(37, 99, 235, 0.55);
+}
+
+.shape-editor__actions {
+  display: flex;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+
+.ghost-button {
+  padding: 0.5rem 0.9rem;
+  border-radius: 0.6rem;
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--muted);
+  font-weight: 600;
+  cursor: pointer;
+  transition: border 0.2s ease, color 0.2s ease, background 0.2s ease,
+    transform 0.2s ease;
+}
+
+.ghost-button:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+  background: rgba(37, 99, 235, 0.08);
+  transform: translateY(-1px);
+}
+
+.ghost-button:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+  transform: none;
+}
+
+.ghost-button:focus-visible {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.25);
+}
+
+.danger {
+  padding: 0.75rem 1.2rem;
+  border-radius: 0.8rem;
+  border: none;
+  background: #ef4444;
+  color: #fff;
+  font-weight: 700;
+  cursor: pointer;
+  transition: transform 0.2s ease, box-shadow 0.2s ease,
+    background-color 0.2s ease;
+}
+
+.danger:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 14px 32px -22px rgba(239, 68, 68, 0.65);
+  background: #dc2626;
+}
+
+.danger:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+  box-shadow: none;
+  transform: none;
+}
+
+.danger:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px rgba(239, 68, 68, 0.35);
+}
+
 #resizeButton {
   grid-column: 1 / -1;
   justify-self: stretch;
