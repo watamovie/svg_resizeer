@@ -38,6 +38,10 @@
   const lockRatio = document.getElementById('lockRatio');
   const resizeButton = document.getElementById('resizeButton');
   const backgroundColorInput = document.getElementById('backgroundColor');
+  const removeLargestShapeCheckbox = document.getElementById('removeLargestShape');
+  const overrideFillColorCheckbox = document.getElementById('overrideFillColor');
+  const fillColorInput = document.getElementById('fillColor');
+  const fillColorGroup = document.getElementById('fillColorGroup');
   const transparentBackgroundCheckbox = document.getElementById('transparentBackground');
   const showDimensionsCheckbox = document.getElementById('showDimensions');
   const showDimensionLabelsCheckbox = document.getElementById('showDimensionLabels');
@@ -160,6 +164,128 @@
       return bbox;
     }
     return null;
+  }
+
+  function removeLargestShape(svgEl) {
+    if (!svgEl) return false;
+    const candidateTags = new Set([
+      'rect',
+      'path',
+      'circle',
+      'ellipse',
+      'polygon',
+      'polyline',
+      'image',
+    ]);
+    const trackingAttr = 'data-remove-candidate-id';
+    const trackedElements = [];
+
+    Array.from(svgEl.querySelectorAll('*')).forEach((element, index) => {
+      const tagName = element.tagName ? element.tagName.toLowerCase() : '';
+      if (!candidateTags.has(tagName)) return;
+      element.setAttribute(trackingAttr, `${index}`);
+      trackedElements.push(element);
+    });
+
+    if (!trackedElements.length) {
+      return false;
+    }
+
+    const container = ensureMeasurementContainer();
+    const clone = svgEl.cloneNode(true);
+    if (!clone.hasAttribute('xmlns')) {
+      clone.setAttribute('xmlns', 'http://www.w3.org/2000/svg');
+    }
+    container.appendChild(clone);
+
+    let largestElement = null;
+    let largestArea = 0;
+
+    try {
+      trackedElements.forEach((originalElement) => {
+        const id = originalElement.getAttribute(trackingAttr);
+        if (!id) return;
+        const cloneElement = clone.querySelector(`[${trackingAttr}="${id}"]`);
+        if (!cloneElement || cloneElement.closest('defs')) return;
+        if (typeof cloneElement.getBBox !== 'function') return;
+
+        let bbox = null;
+        try {
+          bbox = cloneElement.getBBox();
+        } catch {
+          bbox = null;
+        }
+
+        if (
+          !bbox ||
+          !Number.isFinite(bbox.width) ||
+          !Number.isFinite(bbox.height) ||
+          bbox.width <= 0 ||
+          bbox.height <= 0
+        ) {
+          return;
+        }
+
+        const area = bbox.width * bbox.height;
+        if (!Number.isFinite(area) || area <= 0) {
+          return;
+        }
+
+        if (area > largestArea) {
+          largestArea = area;
+          largestElement = originalElement;
+        }
+      });
+    } finally {
+      if (clone.parentNode === container) {
+        container.removeChild(clone);
+      }
+      trackedElements.forEach((element) => {
+        element.removeAttribute(trackingAttr);
+      });
+    }
+
+    if (!largestElement) {
+      return false;
+    }
+
+    if (largestElement.parentNode) {
+      largestElement.parentNode.removeChild(largestElement);
+      return true;
+    }
+
+    return false;
+  }
+
+  function applyFillColor(svgEl, fillColor) {
+    if (!svgEl || !fillColor) return;
+    const normalizedColor = normalizeHexColor(fillColor) || fillColor;
+    if (!normalizedColor) return;
+
+    const fillableTags = new Set([
+      'path',
+      'rect',
+      'circle',
+      'ellipse',
+      'polygon',
+      'polyline',
+      'text',
+      'g',
+      'use',
+      'image',
+    ]);
+
+    Array.from(svgEl.querySelectorAll('*')).forEach((element) => {
+      if (!element.tagName) return;
+      if (element.closest('defs')) return;
+      const tagName = element.tagName.toLowerCase();
+      if (!fillableTags.has(tagName)) return;
+      if (element.hasAttribute('data-generated-by')) return;
+      if (element.style && typeof element.style.setProperty === 'function') {
+        element.style.setProperty('fill', normalizedColor);
+      }
+      element.setAttribute('fill', normalizedColor);
+    });
   }
 
   function parseLength(value) {
@@ -701,9 +827,22 @@
     const drillHoleDiameterValue = drillHoleDiameterInput
       ? parsePositiveNumber(drillHoleDiameterInput.value)
       : null;
+    const shouldRemoveLargestShape = removeLargestShapeCheckbox
+      ? removeLargestShapeCheckbox.checked
+      : false;
+    const shouldOverrideFillColor = overrideFillColorCheckbox
+      ? overrideFillColorCheckbox.checked
+      : false;
+    const overrideFillColorValue = fillColorInput ? fillColorInput.value : null;
 
     try {
       const svgEl = parseSvg(svgText);
+      if (shouldRemoveLargestShape) {
+        removeLargestShape(svgEl);
+      }
+      if (shouldOverrideFillColor && overrideFillColorValue) {
+        applyFillColor(svgEl, overrideFillColorValue);
+      }
       const svgString = generateResizedSvg(svgEl, targetWidthPx, targetHeightPx, unit, {
         includeDimensions: showDimensionsCheckbox ? showDimensionsCheckbox.checked : true,
         showDimensionLabels: showDimensionLabelsCheckbox
@@ -1025,6 +1164,37 @@
   if (backgroundColorInput) {
     backgroundColorInput.addEventListener('input', () => {
       if (transparentBackgroundCheckbox && transparentBackgroundCheckbox.checked) {
+        return;
+      }
+      refreshPreviewIfReady();
+    });
+  }
+
+  if (removeLargestShapeCheckbox) {
+    removeLargestShapeCheckbox.addEventListener('change', () => {
+      refreshPreviewIfReady();
+    });
+  }
+
+  const updateFillColorControlsState = () => {
+    if (!overrideFillColorCheckbox) return;
+    const enabled = overrideFillColorCheckbox.checked;
+    setControlGroupState(fillColorGroup, enabled);
+  };
+
+  if (overrideFillColorCheckbox) {
+    overrideFillColorCheckbox.addEventListener('change', () => {
+      updateFillColorControlsState();
+      refreshPreviewIfReady();
+    });
+    updateFillColorControlsState();
+  } else {
+    setControlGroupState(fillColorGroup, false);
+  }
+
+  if (fillColorInput) {
+    fillColorInput.addEventListener('input', () => {
+      if (overrideFillColorCheckbox && !overrideFillColorCheckbox.checked) {
         return;
       }
       refreshPreviewIfReady();
