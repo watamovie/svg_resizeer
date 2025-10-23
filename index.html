@@ -103,6 +103,18 @@
                 背景を透過
               </label>
               <label class="checkbox">
+                <input type="checkbox" id="removeCanvasBackground" />
+                キャンバスと同じサイズの背景図形を削除
+              </label>
+              <label class="checkbox">
+                <input type="checkbox" id="applyFillColor" />
+                すべての図形の塗りつぶし色を変更
+              </label>
+              <div class="control-group" id="fillColorGroup">
+                <label for="fillColor">新しい塗りつぶし色</label>
+                <input type="color" id="fillColor" value="#111827" />
+              </div>
+              <label class="checkbox">
                 <input type="checkbox" id="showDimensions" checked />
                 寸法線を表示
               </label>
