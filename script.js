@@ -1581,7 +1581,10 @@
       const context = canvas.getContext('2d');
       context.clearRect(0, 0, canvas.width, canvas.height);
       context.drawImage(image, 0, 0, canvas.width, canvas.height);
-      URL.revokeObjectURL(image.src);
+      if (image.dataset.objectUrl) {
+        URL.revokeObjectURL(image.dataset.objectUrl);
+        delete image.dataset.objectUrl;
+      }
       canvas.toBlob((pngBlob) => {
         if (pngBlob) {
           const pngUrl = URL.createObjectURL(pngBlob);
@@ -1594,10 +1597,16 @@
       }, 'image/png');
     };
     image.onerror = () => {
+      if (image.dataset.objectUrl) {
+        URL.revokeObjectURL(image.dataset.objectUrl);
+        delete image.dataset.objectUrl;
+      }
       downloadPngLink.setAttribute('aria-disabled', 'true');
       downloadPngLink.removeAttribute('href');
     };
-    image.src = url;
+    const imageUrl = URL.createObjectURL(blob);
+    image.dataset.objectUrl = imageUrl;
+    image.src = imageUrl;
   }
 
   function performResize(options = {}) {
