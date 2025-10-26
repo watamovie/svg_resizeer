@@ -1581,7 +1581,10 @@
       const context = canvas.getContext('2d');
       context.clearRect(0, 0, canvas.width, canvas.height);
       context.drawImage(image, 0, 0, canvas.width, canvas.height);
-      URL.revokeObjectURL(image.src);
+      // Keep the SVG blob URL alive for the download link. The URL will be
+      // revoked when a new preview is generated via clearObjectUrls().
+      image.onload = null;
+      image.src = '';
       canvas.toBlob((pngBlob) => {
         if (pngBlob) {
           const pngUrl = URL.createObjectURL(pngBlob);
