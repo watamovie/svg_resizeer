@@ -67,6 +67,16 @@
   const drillHoleDiameterGroup = drillHoleDiameterInput
     ? drillHoleDiameterInput.closest('.control-group')
     : document.getElementById('drillHoleDiameterGroup');
+  const enableFooterTextCheckbox = document.getElementById('enableFooterText');
+  const footerTextInput = document.getElementById('footerText');
+  const footerTextGroup = footerTextInput
+    ? footerTextInput.closest('.control-group')
+    : document.getElementById('footerTextGroup');
+  const enableCustomFilenameCheckbox = document.getElementById('enableCustomFilename');
+  const customFilenameInput = document.getElementById('customFilename');
+  const customFilenameGroup = customFilenameInput
+    ? customFilenameInput.closest('.control-group')
+    : document.getElementById('customFilenameGroup');
   const previewArea = document.getElementById('previewArea');
   const messageEl = document.getElementById('message');
   const downloadSvgLink = document.getElementById('downloadSvg');
@@ -92,6 +102,7 @@
   };
 
   const MM_TO_PX = 96 / 25.4;
+  const DEFAULT_FILENAME_BASE = 'resized-with-dimensions';
 
   let originalRatio = null;
   let activeObjectUrls = [];
@@ -1141,6 +1152,42 @@
     return Math.min(Math.max(value, min), max);
   }
 
+  function escapeXml(text) {
+    if (typeof text !== 'string' || !text) {
+      return '';
+    }
+    const replacements = {
+      '&': '&amp;',
+      '<': '&lt;',
+      '>': '&gt;',
+      '"': '&quot;',
+      "'": '&#39;',
+    };
+    return text.replace(/[&<>"']/g, (char) => replacements[char] || char);
+  }
+
+  function sanitizeFilename(name) {
+    if (typeof name !== 'string') {
+      return '';
+    }
+    let working = name.trim();
+    if (!working) {
+      return '';
+    }
+    working = working.replace(/\.(svg|png)$/i, '');
+    working = working.replace(/[\u0000-\u001f\u007f<>:"/\\|?*]+/g, '-');
+    working = working.replace(/\s+/g, '-');
+    working = working.replace(/-+/g, '-');
+    working = working.replace(/^-|-$/g, '');
+    if (!working) {
+      return '';
+    }
+    if (working.length > 120) {
+      working = working.slice(0, 120);
+    }
+    return working;
+  }
+
   function formatDimensionDisplay(value, options = {}) {
     const { round = false } = options;
     if (!Number.isFinite(value)) return '';
@@ -1315,6 +1362,8 @@
       drillHoleOffsetMm = 20,
       drillHoleDiameterMm = 10,
       precomputedMetrics = null,
+      includeFooterText = false,
+      footerText = '',
     } = options;
     const metrics = precomputedMetrics || getMetrics(svgEl);
     const viewBox = metrics.viewBox;
@@ -1327,6 +1376,14 @@
     const childMarkup = Array.from(clone.childNodes)
       .map((node) => serializer.serializeToString(node))
       .join('');
+
+    const normalizedFooterText =
+      typeof footerText === 'string'
+        ? footerText.replace(/\r?\n/g, ' ').trim()
+        : '';
+    const shouldIncludeFooterText = Boolean(
+      includeFooterText && normalizedFooterText
+    );
 
     const namespaceAttrs = Array.from(svgEl.attributes)
       .filter((attr) => attr.name.startsWith('xmlns'))
@@ -1344,6 +1401,7 @@
     const strokeWidth = Math.max(scaleRef * 0.004, 0.75);
     const baseFontSize = Math.max(scaleRef * 0.06, 12);
     const fontSize = baseFontSize * Math.max(dimensionTextScale, 0.2);
+    const footerFontSize = Math.max(baseFontSize * 0.7, 10);
     const tickSize = Math.max(
       marginBase * 0.35,
       Math.min(viewBox.width, viewBox.height) * 0.08,
@@ -1352,10 +1410,14 @@
     const textOffset = Math.max(fontSize * 0.7, strokeWidth * 6, tickSize * 0.85);
     const dimOffset = Math.max(marginBase * 0.6, tickSize + fontSize * 0.35);
 
-    const bottomMargin = Math.max(
-      marginBase,
-      dimOffset + tickSize + textOffset + fontSize * 1.1
-    );
+    const baseBottomMargin = includeDimensions
+      ? dimOffset + tickSize + textOffset + fontSize * 1.1
+      : marginBase;
+    const footerPadding = Math.max(fontSize * 0.4, strokeWidth * 4, 12);
+    const footerBlockHeight = shouldIncludeFooterText
+      ? footerPadding + footerFontSize * 1.1
+      : 0;
+    const bottomMargin = Math.max(marginBase, baseBottomMargin + footerBlockHeight);
     const rightMargin = Math.max(marginBase, dimOffset + tickSize + textOffset + fontSize * 0.9);
     const topMargin = marginBase;
     const leftMargin = marginBase;
@@ -1372,6 +1434,12 @@
 
     const horizontalLabelY = horizontalY + textOffset;
     const verticalLabelX = verticalX + textOffset;
+    const dimensionContentBottom = includeDimensions
+      ? horizontalLabelY + fontSize * 1.1
+      : viewBox.minY + viewBox.height;
+    const footerTextTop = shouldIncludeFooterText
+      ? dimensionContentBottom + footerPadding
+      : dimensionContentBottom;
 
     const markerIdBase = 'dimension-arrow-marker';
 
@@ -1381,6 +1449,9 @@
     });
     const drillHoleFillColor =
       normalizeHexColor(backgroundColor) || backgroundColor || '#ffffff';
+    const sanitizedFooterText = shouldIncludeFooterText
+      ? escapeXml(normalizedFooterText)
+      : '';
 
     const defs = includeDimensions
       ? `
@@ -1539,6 +1610,11 @@
       </g>`
       : '';
 
+    const footerTextElement = shouldIncludeFooterText && sanitizedFooterText
+      ? `
+      <text data-generated-by="footer-text" x="${viewBox.minX + viewBox.width / 2}" y="${footerTextTop}" fill="${dimensionColors.text}" font-size="${footerFontSize}" font-weight="500" font-family="'Segoe UI', 'Hiragino Sans', 'Yu Gothic', sans-serif" text-anchor="middle" dominant-baseline="text-before-edge">${sanitizedFooterText}</text>`
+      : '';
+
     const widthAttr = `${formatNumber(displayWidth)}${unitSuffix}`;
     const heightAttr = `${formatNumber(displayHeight)}${unitSuffix}`;
 
@@ -1556,22 +1632,29 @@
         ${drillHolesGroup}
         ${dimensionLines}
         ${labels}
+        ${footerTextElement}
       </svg>
     `;
 
     return svgString;
   }
 
-  function updateDownloads(svgString, width, height) {
+  function updateDownloads(svgString, width, height, options = {}) {
+    const baseFilename =
+      options && options.filenameBase
+        ? options.filenameBase
+        : DEFAULT_FILENAME_BASE;
     clearObjectUrls();
     const blob = new Blob([svgString], { type: 'image/svg+xml' });
     const url = URL.createObjectURL(blob);
     downloadSvgLink.href = url;
+    downloadSvgLink.setAttribute('download', `${baseFilename}.svg`);
     downloadSvgLink.setAttribute('aria-disabled', 'false');
     activeObjectUrls.push(url);
 
     downloadPngLink.setAttribute('aria-disabled', 'true');
     downloadPngLink.removeAttribute('href');
+    downloadPngLink.setAttribute('download', `${baseFilename}.png`);
 
     const image = new Image();
     image.onload = () => {
@@ -1638,6 +1721,22 @@
       ? removeAllStrokesCheckbox.checked
       : false;
     const overrideFillColorValue = fillColorInput ? fillColorInput.value : null;
+    const footerTextRaw = footerTextInput ? footerTextInput.value : '';
+    const normalizedFooterTextInput =
+      typeof footerTextRaw === 'string'
+        ? footerTextRaw.replace(/\r?\n/g, ' ').trim()
+        : '';
+    const shouldIncludeFooterText = Boolean(
+      enableFooterTextCheckbox &&
+        enableFooterTextCheckbox.checked &&
+        normalizedFooterTextInput
+    );
+    const customFilenameRaw = customFilenameInput ? customFilenameInput.value : '';
+    const sanitizedFilenameBase =
+      enableCustomFilenameCheckbox && enableCustomFilenameCheckbox.checked
+        ? sanitizeFilename(customFilenameRaw)
+        : '';
+    const effectiveFilenameBase = sanitizedFilenameBase || DEFAULT_FILENAME_BASE;
 
     try {
       const svgEl = parseSvg(svgText);
@@ -1724,9 +1823,13 @@
         drillHoleOffsetMm: drillHoleOffsetValue ?? 20,
         drillHoleDiameterMm: drillHoleDiameterValue ?? 10,
         precomputedMetrics: metrics,
+        includeFooterText: shouldIncludeFooterText,
+        footerText: shouldIncludeFooterText ? normalizedFooterTextInput : '',
       });
       previewArea.innerHTML = svgString;
-      updateDownloads(svgString, targetWidthPx, targetHeightPx);
+      updateDownloads(svgString, targetWidthPx, targetHeightPx, {
+        filenameBase: effectiveFilenameBase,
+      });
       if (!silent) {
         setMessage('リサイズと寸法線の追加が完了しました。');
         goToStep('preview');
@@ -1919,6 +2022,20 @@
       }
     });
   }
+
+  const updateFooterTextControlsState = () => {
+    const enabled = enableFooterTextCheckbox
+      ? enableFooterTextCheckbox.checked
+      : false;
+    setControlGroupState(footerTextGroup, enabled);
+  };
+
+  const updateCustomFilenameControlsState = () => {
+    const enabled = enableCustomFilenameCheckbox
+      ? enableCustomFilenameCheckbox.checked
+      : false;
+    setControlGroupState(customFilenameGroup, enabled);
+  };
 
   updateShapeRemovalControls(null);
   updateColorRemovalControls(null);
@@ -2178,6 +2295,44 @@
 
   if (drillHoleDiameterInput) {
     drillHoleDiameterInput.addEventListener('input', () => {
+      refreshPreviewIfReady();
+    });
+  }
+
+  if (enableFooterTextCheckbox) {
+    enableFooterTextCheckbox.addEventListener('change', () => {
+      updateFooterTextControlsState();
+      refreshPreviewIfReady();
+    });
+    updateFooterTextControlsState();
+  } else {
+    setControlGroupState(footerTextGroup, false);
+  }
+
+  if (footerTextInput) {
+    footerTextInput.addEventListener('input', () => {
+      if (enableFooterTextCheckbox && !enableFooterTextCheckbox.checked) {
+        return;
+      }
+      refreshPreviewIfReady();
+    });
+  }
+
+  if (enableCustomFilenameCheckbox) {
+    enableCustomFilenameCheckbox.addEventListener('change', () => {
+      updateCustomFilenameControlsState();
+      refreshPreviewIfReady();
+    });
+    updateCustomFilenameControlsState();
+  } else {
+    setControlGroupState(customFilenameGroup, false);
+  }
+
+  if (customFilenameInput) {
+    customFilenameInput.addEventListener('input', () => {
+      if (enableCustomFilenameCheckbox && !enableCustomFilenameCheckbox.checked) {
+        return;
+      }
       refreshPreviewIfReady();
     });
   }
