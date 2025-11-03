@@ -2027,6 +2027,12 @@
     const enabled = enableFooterTextCheckbox
       ? enableFooterTextCheckbox.checked
       : false;
+    if (enableFooterTextCheckbox) {
+      enableFooterTextCheckbox.setAttribute(
+        'aria-expanded',
+        enabled ? 'true' : 'false'
+      );
+    }
     setControlGroupState(footerTextGroup, enabled);
   };
 
@@ -2034,6 +2040,12 @@
     const enabled = enableCustomFilenameCheckbox
       ? enableCustomFilenameCheckbox.checked
       : false;
+    if (enableCustomFilenameCheckbox) {
+      enableCustomFilenameCheckbox.setAttribute(
+        'aria-expanded',
+        enabled ? 'true' : 'false'
+      );
+    }
     setControlGroupState(customFilenameGroup, enabled);
   };
 
