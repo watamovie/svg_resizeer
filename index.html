@@ -158,29 +158,45 @@
                     </div>
                   </div>
                   <label class="checkbox">
-                    <input type="checkbox" id="enableFooterText" />
+                    <input
+                      type="checkbox"
+                      id="enableFooterText"
+                      aria-controls="footerTextGroup"
+                    />
                     キャンバス下部にテキストを追加
                   </label>
-                  <div class="control-group control-group--full" id="footerTextGroup">
+                  <div
+                    class="control-group control-group--full is-disabled"
+                    id="footerTextGroup"
+                  >
                     <label for="footerText">追加するテキスト</label>
                     <input
                       type="text"
                       id="footerText"
                       placeholder="例: © 2024 Example Company"
                       autocomplete="off"
+                      disabled
                     />
                   </div>
                   <label class="checkbox">
-                    <input type="checkbox" id="enableCustomFilename" />
+                    <input
+                      type="checkbox"
+                      id="enableCustomFilename"
+                      aria-controls="customFilenameGroup"
+                    />
                     出力ファイル名を指定
                   </label>
-                  <div class="control-group control-group--full" id="customFilenameGroup">
+                  <div
+                    class="control-group control-group--full is-disabled"
+                    id="customFilenameGroup"
+                  >
                     <label for="customFilename">ファイル名（拡張子不要）</label>
                     <input
                       type="text"
                       id="customFilename"
                       placeholder="例: custom-drawing"
                       autocomplete="off"
+                      disabled
                     />
                   </div>
                 </div>
