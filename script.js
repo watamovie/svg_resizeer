@@ -2010,6 +2010,7 @@
   function setControlGroupState(group, enabled) {
     if (!group) return;
     group.classList.toggle('is-disabled', !enabled);
+    group.setAttribute('aria-disabled', enabled ? 'false' : 'true');
     const interactiveElements = group.querySelectorAll(
       'input, select, textarea, button'
     );
