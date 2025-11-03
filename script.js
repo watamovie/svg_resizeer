@@ -1398,14 +1398,14 @@
 
     const marginBase = Math.max(Math.max(viewBox.width, viewBox.height) * 0.12, 24);
     const scaleRef = Math.max(viewBox.width, viewBox.height) || 1;
-    const strokeWidth = Math.max(scaleRef * 0.004, 0.75);
+    const strokeWidth = Math.max(scaleRef * 0.003, 0.65);
     const baseFontSize = Math.max(scaleRef * 0.06, 12);
     const fontSize = baseFontSize * Math.max(dimensionTextScale, 0.2);
     const footerFontSize = Math.max(baseFontSize * 0.7, 10);
     const tickSize = Math.max(
-      marginBase * 0.35,
-      Math.min(viewBox.width, viewBox.height) * 0.08,
-      8
+      marginBase * 0.25,
+      Math.min(viewBox.width, viewBox.height) * 0.06,
+      6
     );
     const textOffset = Math.max(fontSize * 0.7, strokeWidth * 6, tickSize * 0.85);
     const dimOffset = Math.max(marginBase * 0.6, tickSize + fontSize * 0.35);
@@ -1432,8 +1432,9 @@
     const horizontalY = viewBox.minY + viewBox.height + dimOffset;
     const verticalX = viewBox.minX + viewBox.width + dimOffset;
 
-    const horizontalLabelY = horizontalY + textOffset;
-    const verticalLabelX = verticalX + textOffset;
+    const labelBaselineOffset = fontSize * 0.5;
+    const horizontalLabelY = horizontalY + textOffset + labelBaselineOffset;
+    const verticalLabelX = verticalX + textOffset + labelBaselineOffset;
     const dimensionContentBottom = includeDimensions
       ? horizontalLabelY + fontSize * 1.1
       : viewBox.minY + viewBox.height;
@@ -1456,24 +1457,24 @@
     const defs = includeDimensions
       ? `
       <defs data-generated-by="dimension-overlay">
-        <marker id="${markerIdBase}-start" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto" markerUnits="strokeWidth">
-          <path d="M6 3L0 6V0L6 3Z" fill="${dimensionColors.stroke}"></path>
+        <marker id="${markerIdBase}-start" markerWidth="10" markerHeight="10" refX="7" refY="5" orient="auto" markerUnits="strokeWidth">
+          <path d="M10 5L0 10V0L10 5Z" fill="${dimensionColors.stroke}"></path>
         </marker>
-        <marker id="${markerIdBase}-end" markerWidth="8" markerHeight="8" refX="0" refY="3" orient="auto" markerUnits="strokeWidth">
-          <path d="M0 3L6 6V0L0 3Z" fill="${dimensionColors.stroke}"></path>
+        <marker id="${markerIdBase}-end" markerWidth="10" markerHeight="10" refX="3" refY="5" orient="auto" markerUnits="strokeWidth">
+          <path d="M0 5L10 10V0L0 5Z" fill="${dimensionColors.stroke}"></path>
         </marker>
       </defs>`
       : '';
 
     const dimensionLines = includeDimensions
       ? `
-      <g data-generated-by="dimension-overlay" fill="none" stroke="${dimensionColors.stroke}" stroke-width="${strokeWidth}" stroke-linecap="round">
+      <g data-generated-by="dimension-overlay" fill="none" stroke="${dimensionColors.stroke}" stroke-width="${strokeWidth}" stroke-linecap="square" stroke-linejoin="round">
         <line x1="${viewBox.minX}" y1="${horizontalY}" x2="${viewBox.minX + viewBox.width}" y2="${horizontalY}" marker-start="url(#${markerIdBase}-start)" marker-end="url(#${markerIdBase}-end)"></line>
         <line x1="${verticalX}" y1="${viewBox.minY}" x2="${verticalX}" y2="${viewBox.minY + viewBox.height}" marker-start="url(#${markerIdBase}-start)" marker-end="url(#${markerIdBase}-end)"></line>
-        <line x1="${viewBox.minX}" y1="${viewBox.minY}" x2="${viewBox.minX}" y2="${horizontalY}" stroke-dasharray="${strokeWidth * 2}"></line>
-        <line x1="${viewBox.minX + viewBox.width}" y1="${viewBox.minY}" x2="${viewBox.minX + viewBox.width}" y2="${horizontalY}" stroke-dasharray="${strokeWidth * 2}"></line>
-        <line x1="${viewBox.minX}" y1="${viewBox.minY}" x2="${verticalX}" y2="${viewBox.minY}" stroke-dasharray="${strokeWidth * 2}"></line>
-        <line x1="${viewBox.minX}" y1="${viewBox.minY + viewBox.height}" x2="${verticalX}" y2="${viewBox.minY + viewBox.height}" stroke-dasharray="${strokeWidth * 2}"></line>
+        <line x1="${viewBox.minX}" y1="${viewBox.minY}" x2="${viewBox.minX}" y2="${horizontalY}"></line>
+        <line x1="${viewBox.minX + viewBox.width}" y1="${viewBox.minY}" x2="${viewBox.minX + viewBox.width}" y2="${horizontalY}"></line>
+        <line x1="${viewBox.minX}" y1="${viewBox.minY}" x2="${verticalX}" y2="${viewBox.minY}"></line>
+        <line x1="${viewBox.minX}" y1="${viewBox.minY + viewBox.height}" x2="${verticalX}" y2="${viewBox.minY + viewBox.height}"></line>
         <line x1="${viewBox.minX}" y1="${horizontalY}" x2="${viewBox.minX}" y2="${horizontalY + tickSize}"></line>
         <line x1="${viewBox.minX + viewBox.width}" y1="${horizontalY}" x2="${viewBox.minX + viewBox.width}" y2="${horizontalY + tickSize}"></line>
         <line x1="${verticalX}" y1="${viewBox.minY}" x2="${verticalX + tickSize}" y2="${viewBox.minY}"></line>
@@ -1604,9 +1605,9 @@
 
     const labels = includeDimensions
       ? `
-      <g data-generated-by="dimension-overlay" fill="${dimensionColors.text}" font-size="${fontSize}" font-weight="600" font-family="'Segoe UI', 'Hiragino Sans', 'Yu Gothic', sans-serif">
-        <text x="${viewBox.minX + viewBox.width / 2}" y="${horizontalLabelY}" text-anchor="middle" dominant-baseline="text-before-edge">${widthLabelText}</text>
-        <text x="${verticalLabelX}" y="${viewBox.minY + viewBox.height / 2}" text-anchor="middle" dominant-baseline="middle" transform="rotate(-90 ${verticalLabelX} ${viewBox.minY + viewBox.height / 2})">${heightLabelText}</text>
+      <g data-generated-by="dimension-overlay" fill="${dimensionColors.text}" font-size="${fontSize}" font-weight="500" font-family="'Inter', 'Helvetica Neue', 'Hiragino Sans', 'Yu Gothic', sans-serif" letter-spacing="0.02em">
+        <text x="${viewBox.minX + viewBox.width / 2}" y="${horizontalLabelY}" text-anchor="middle" dominant-baseline="central">${widthLabelText}</text>
+        <text x="${verticalLabelX}" y="${viewBox.minY + viewBox.height / 2}" text-anchor="middle" dominant-baseline="central" transform="rotate(-90 ${verticalLabelX} ${viewBox.minY + viewBox.height / 2})">${heightLabelText}</text>
       </g>`
       : '';
 
