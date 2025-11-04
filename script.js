@@ -1330,7 +1330,7 @@
 
   function getDimensionColors(options = {}) {
     const { transparentBackground = false, backgroundColor } = options;
-    const defaultStroke = '#374151';
+    const defaultStroke = '#1f2937';
     const defaultText = '#111827';
 
     if (transparentBackground) {
@@ -1398,8 +1398,8 @@
 
     const marginBase = Math.max(Math.max(viewBox.width, viewBox.height) * 0.12, 24);
     const scaleRef = Math.max(viewBox.width, viewBox.height) || 1;
-    const strokeWidth = Math.max(scaleRef * 0.004, 0.75);
-    const baseFontSize = Math.max(scaleRef * 0.06, 12);
+    const strokeWidth = Math.max(scaleRef * 0.0045, 0.9);
+    const baseFontSize = Math.max(scaleRef * 0.058, 12);
     const fontSize = baseFontSize * Math.max(dimensionTextScale, 0.2);
     const footerFontSize = Math.max(baseFontSize * 0.7, 10);
     const tickSize = Math.max(
@@ -1407,20 +1407,43 @@
       Math.min(viewBox.width, viewBox.height) * 0.08,
       8
     );
-    const textOffset = Math.max(fontSize * 0.7, strokeWidth * 6, tickSize * 0.85);
-    const dimOffset = Math.max(marginBase * 0.6, tickSize + fontSize * 0.35);
+    const textOffset = Math.max(fontSize * 0.6, strokeWidth * 5.5, tickSize * 0.75);
+    const dimOffset = Math.max(marginBase * 0.55, tickSize + fontSize * 0.3);
 
-    const baseBottomMargin = includeDimensions
-      ? dimOffset + tickSize + textOffset + fontSize * 1.1
-      : marginBase;
-    const footerPadding = Math.max(fontSize * 0.4, strokeWidth * 4, 12);
+    const horizontalPosition = 'bottom';
+    const verticalPosition = 'left';
+
+    const dimensionSpacing = dimOffset + tickSize + textOffset + fontSize * 1.05;
+    const verticalSpacing = dimOffset + tickSize + textOffset + fontSize * 0.9;
+    const footerPadding = Math.max(fontSize * 0.35, strokeWidth * 4, 12);
     const footerBlockHeight = shouldIncludeFooterText
       ? footerPadding + footerFontSize * 1.1
       : 0;
-    const bottomMargin = Math.max(marginBase, baseBottomMargin + footerBlockHeight);
-    const rightMargin = Math.max(marginBase, dimOffset + tickSize + textOffset + fontSize * 0.9);
-    const topMargin = marginBase;
-    const leftMargin = marginBase;
+
+    let topMargin = marginBase;
+    let bottomMargin = marginBase;
+    let leftMargin = marginBase;
+    let rightMargin = marginBase;
+
+    if (includeDimensions) {
+      if (horizontalPosition === 'top') {
+        topMargin = Math.max(marginBase, dimensionSpacing);
+      } else {
+        bottomMargin = Math.max(marginBase, dimensionSpacing + footerBlockHeight);
+      }
+
+      if (verticalPosition === 'left') {
+        leftMargin = Math.max(marginBase, verticalSpacing);
+      } else {
+        rightMargin = Math.max(marginBase, verticalSpacing);
+      }
+
+      if (shouldIncludeFooterText && horizontalPosition === 'top') {
+        bottomMargin = Math.max(bottomMargin, marginBase + footerBlockHeight);
+      }
+    } else if (shouldIncludeFooterText) {
+      bottomMargin = Math.max(bottomMargin, marginBase + footerBlockHeight);
+    }
 
     const finalViewBox = {
       minX: viewBox.minX - leftMargin,
@@ -1429,14 +1452,28 @@
       height: viewBox.height + topMargin + bottomMargin,
     };
 
-    const horizontalY = viewBox.minY + viewBox.height + dimOffset;
-    const verticalX = viewBox.minX + viewBox.width + dimOffset;
+    const horizontalY =
+      horizontalPosition === 'top'
+        ? viewBox.minY - dimOffset
+        : viewBox.minY + viewBox.height + dimOffset;
+    const verticalX =
+      verticalPosition === 'left'
+        ? viewBox.minX - dimOffset
+        : viewBox.minX + viewBox.width + dimOffset;
 
-    const horizontalLabelY = horizontalY + textOffset;
-    const verticalLabelX = verticalX + textOffset;
-    const dimensionContentBottom = includeDimensions
-      ? horizontalLabelY + fontSize * 1.1
-      : viewBox.minY + viewBox.height;
+    const horizontalLabelY =
+      horizontalPosition === 'top' ? horizontalY - textOffset : horizontalY + textOffset;
+    const verticalLabelX =
+      verticalPosition === 'left' ? verticalX - textOffset : verticalX + textOffset;
+    const dimensionContentBottom = (() => {
+      if (!includeDimensions) {
+        return viewBox.minY + viewBox.height;
+      }
+      if (horizontalPosition === 'top') {
+        return viewBox.minY + viewBox.height;
+      }
+      return horizontalLabelY + fontSize * 1.05;
+    })();
     const footerTextTop = shouldIncludeFooterText
       ? dimensionContentBottom + footerPadding
       : dimensionContentBottom;
@@ -1456,28 +1493,29 @@
     const defs = includeDimensions
       ? `
       <defs data-generated-by="dimension-overlay">
-        <marker id="${markerIdBase}-start" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto" markerUnits="strokeWidth">
-          <path d="M6 3L0 6V0L6 3Z" fill="${dimensionColors.stroke}"></path>
+        <marker id="${markerIdBase}-start" markerWidth="6" markerHeight="6" refX="5" refY="3" orient="auto" markerUnits="strokeWidth">
+          <path d="M5.5 3L0 5.75V0.25L5.5 3Z" fill="${dimensionColors.stroke}"></path>
         </marker>
-        <marker id="${markerIdBase}-end" markerWidth="8" markerHeight="8" refX="0" refY="3" orient="auto" markerUnits="strokeWidth">
-          <path d="M0 3L6 6V0L0 3Z" fill="${dimensionColors.stroke}"></path>
+        <marker id="${markerIdBase}-end" markerWidth="6" markerHeight="6" refX="0.5" refY="3" orient="auto" markerUnits="strokeWidth">
+          <path d="M0 3L5.5 5.75V0.25L0 3Z" fill="${dimensionColors.stroke}"></path>
         </marker>
       </defs>`
       : '';
 
+    const horizontalExtensionBaseY =
+      horizontalPosition === 'top' ? viewBox.minY : viewBox.minY + viewBox.height;
+    const verticalExtensionBaseX =
+      verticalPosition === 'left' ? viewBox.minX : viewBox.minX + viewBox.width;
+
     const dimensionLines = includeDimensions
       ? `
-      <g data-generated-by="dimension-overlay" fill="none" stroke="${dimensionColors.stroke}" stroke-width="${strokeWidth}" stroke-linecap="round">
+      <g data-generated-by="dimension-overlay" fill="none" stroke="${dimensionColors.stroke}" stroke-width="${strokeWidth}" stroke-linecap="square" stroke-linejoin="miter">
         <line x1="${viewBox.minX}" y1="${horizontalY}" x2="${viewBox.minX + viewBox.width}" y2="${horizontalY}" marker-start="url(#${markerIdBase}-start)" marker-end="url(#${markerIdBase}-end)"></line>
         <line x1="${verticalX}" y1="${viewBox.minY}" x2="${verticalX}" y2="${viewBox.minY + viewBox.height}" marker-start="url(#${markerIdBase}-start)" marker-end="url(#${markerIdBase}-end)"></line>
-        <line x1="${viewBox.minX}" y1="${viewBox.minY}" x2="${viewBox.minX}" y2="${horizontalY}" stroke-dasharray="${strokeWidth * 2}"></line>
-        <line x1="${viewBox.minX + viewBox.width}" y1="${viewBox.minY}" x2="${viewBox.minX + viewBox.width}" y2="${horizontalY}" stroke-dasharray="${strokeWidth * 2}"></line>
-        <line x1="${viewBox.minX}" y1="${viewBox.minY}" x2="${verticalX}" y2="${viewBox.minY}" stroke-dasharray="${strokeWidth * 2}"></line>
-        <line x1="${viewBox.minX}" y1="${viewBox.minY + viewBox.height}" x2="${verticalX}" y2="${viewBox.minY + viewBox.height}" stroke-dasharray="${strokeWidth * 2}"></line>
-        <line x1="${viewBox.minX}" y1="${horizontalY}" x2="${viewBox.minX}" y2="${horizontalY + tickSize}"></line>
-        <line x1="${viewBox.minX + viewBox.width}" y1="${horizontalY}" x2="${viewBox.minX + viewBox.width}" y2="${horizontalY + tickSize}"></line>
-        <line x1="${verticalX}" y1="${viewBox.minY}" x2="${verticalX + tickSize}" y2="${viewBox.minY}"></line>
-        <line x1="${verticalX}" y1="${viewBox.minY + viewBox.height}" x2="${verticalX + tickSize}" y2="${viewBox.minY + viewBox.height}"></line>
+        <line x1="${viewBox.minX}" y1="${horizontalExtensionBaseY}" x2="${viewBox.minX}" y2="${horizontalY}"></line>
+        <line x1="${viewBox.minX + viewBox.width}" y1="${horizontalExtensionBaseY}" x2="${viewBox.minX + viewBox.width}" y2="${horizontalY}"></line>
+        <line x1="${verticalExtensionBaseX}" y1="${viewBox.minY}" x2="${verticalX}" y2="${viewBox.minY}"></line>
+        <line x1="${verticalExtensionBaseX}" y1="${viewBox.minY + viewBox.height}" x2="${verticalX}" y2="${viewBox.minY + viewBox.height}"></line>
       </g>`
       : '';
 
@@ -1604,8 +1642,8 @@
 
     const labels = includeDimensions
       ? `
-      <g data-generated-by="dimension-overlay" fill="${dimensionColors.text}" font-size="${fontSize}" font-weight="600" font-family="'Segoe UI', 'Hiragino Sans', 'Yu Gothic', sans-serif">
-        <text x="${viewBox.minX + viewBox.width / 2}" y="${horizontalLabelY}" text-anchor="middle" dominant-baseline="text-before-edge">${widthLabelText}</text>
+      <g data-generated-by="dimension-overlay" fill="${dimensionColors.text}" font-size="${fontSize}" font-weight="500" font-family="'Segoe UI', 'Hiragino Sans', 'Yu Gothic', sans-serif" letter-spacing="0.02em">
+        <text x="${viewBox.minX + viewBox.width / 2}" y="${horizontalLabelY}" text-anchor="middle" dominant-baseline="${horizontalPosition === 'top' ? 'text-after-edge' : 'text-before-edge'}">${widthLabelText}</text>
         <text x="${verticalLabelX}" y="${viewBox.minY + viewBox.height / 2}" text-anchor="middle" dominant-baseline="middle" transform="rotate(-90 ${verticalLabelX} ${viewBox.minY + viewBox.height / 2})">${heightLabelText}</text>
       </g>`
       : '';
