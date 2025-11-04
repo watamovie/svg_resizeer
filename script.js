@@ -1402,13 +1402,9 @@
     const baseFontSize = Math.max(scaleRef * 0.06, 12);
     const fontSize = baseFontSize * Math.max(dimensionTextScale, 0.2);
     const footerFontSize = Math.max(baseFontSize * 0.7, 10);
-    const tickSize = Math.max(
-      marginBase * 0.35,
-      Math.min(viewBox.width, viewBox.height) * 0.08,
-      8
-    );
-    const textOffset = Math.max(fontSize * 0.7, strokeWidth * 6, tickSize * 0.85);
-    const dimOffset = Math.max(marginBase * 0.6, tickSize + fontSize * 0.35);
+    const tickSize = Math.max(scaleRef * 0.04, strokeWidth * 3, 6);
+    const textOffset = Math.max(fontSize * 0.8, strokeWidth * 6, tickSize * 1.5);
+    const dimOffset = Math.max(marginBase * 0.55, tickSize + fontSize * 0.25);
 
     const baseBottomMargin = includeDimensions
       ? dimOffset + tickSize + textOffset + fontSize * 1.1
@@ -1418,9 +1414,12 @@
       ? footerPadding + footerFontSize * 1.1
       : 0;
     const bottomMargin = Math.max(marginBase, baseBottomMargin + footerBlockHeight);
-    const rightMargin = Math.max(marginBase, dimOffset + tickSize + textOffset + fontSize * 0.9);
+    const leftMarginBase = includeDimensions
+      ? dimOffset + tickSize + textOffset + fontSize * 0.9
+      : marginBase;
+    const leftMargin = Math.max(marginBase, leftMarginBase);
+    const rightMargin = marginBase;
     const topMargin = marginBase;
-    const leftMargin = marginBase;
 
     const finalViewBox = {
       minX: viewBox.minX - leftMargin,
@@ -1430,10 +1429,10 @@
     };
 
     const horizontalY = viewBox.minY + viewBox.height + dimOffset;
-    const verticalX = viewBox.minX + viewBox.width + dimOffset;
+    const verticalX = viewBox.minX - dimOffset;
 
     const horizontalLabelY = horizontalY + textOffset;
-    const verticalLabelX = verticalX + textOffset;
+    const verticalLabelX = verticalX - textOffset;
     const dimensionContentBottom = includeDimensions
       ? horizontalLabelY + fontSize * 1.1
       : viewBox.minY + viewBox.height;
@@ -1457,27 +1456,25 @@
       ? `
       <defs data-generated-by="dimension-overlay">
         <marker id="${markerIdBase}-start" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto" markerUnits="strokeWidth">
-          <path d="M6 3L0 6V0L6 3Z" fill="${dimensionColors.stroke}"></path>
+          <path d="M6 3L0 6" fill="none" stroke="${dimensionColors.stroke}" stroke-width="1" stroke-linecap="square" stroke-linejoin="miter"></path>
+          <path d="M6 3L0 0" fill="none" stroke="${dimensionColors.stroke}" stroke-width="1" stroke-linecap="square" stroke-linejoin="miter"></path>
         </marker>
         <marker id="${markerIdBase}-end" markerWidth="8" markerHeight="8" refX="0" refY="3" orient="auto" markerUnits="strokeWidth">
-          <path d="M0 3L6 6V0L0 3Z" fill="${dimensionColors.stroke}"></path>
+          <path d="M0 3L6 6" fill="none" stroke="${dimensionColors.stroke}" stroke-width="1" stroke-linecap="square" stroke-linejoin="miter"></path>
+          <path d="M0 3L6 0" fill="none" stroke="${dimensionColors.stroke}" stroke-width="1" stroke-linecap="square" stroke-linejoin="miter"></path>
         </marker>
       </defs>`
       : '';
 
     const dimensionLines = includeDimensions
       ? `
-      <g data-generated-by="dimension-overlay" fill="none" stroke="${dimensionColors.stroke}" stroke-width="${strokeWidth}" stroke-linecap="round">
+      <g data-generated-by="dimension-overlay" fill="none" stroke="${dimensionColors.stroke}" stroke-width="${strokeWidth}" stroke-linecap="square" stroke-linejoin="miter">
         <line x1="${viewBox.minX}" y1="${horizontalY}" x2="${viewBox.minX + viewBox.width}" y2="${horizontalY}" marker-start="url(#${markerIdBase}-start)" marker-end="url(#${markerIdBase}-end)"></line>
         <line x1="${verticalX}" y1="${viewBox.minY}" x2="${verticalX}" y2="${viewBox.minY + viewBox.height}" marker-start="url(#${markerIdBase}-start)" marker-end="url(#${markerIdBase}-end)"></line>
-        <line x1="${viewBox.minX}" y1="${viewBox.minY}" x2="${viewBox.minX}" y2="${horizontalY}" stroke-dasharray="${strokeWidth * 2}"></line>
-        <line x1="${viewBox.minX + viewBox.width}" y1="${viewBox.minY}" x2="${viewBox.minX + viewBox.width}" y2="${horizontalY}" stroke-dasharray="${strokeWidth * 2}"></line>
-        <line x1="${viewBox.minX}" y1="${viewBox.minY}" x2="${verticalX}" y2="${viewBox.minY}" stroke-dasharray="${strokeWidth * 2}"></line>
-        <line x1="${viewBox.minX}" y1="${viewBox.minY + viewBox.height}" x2="${verticalX}" y2="${viewBox.minY + viewBox.height}" stroke-dasharray="${strokeWidth * 2}"></line>
-        <line x1="${viewBox.minX}" y1="${horizontalY}" x2="${viewBox.minX}" y2="${horizontalY + tickSize}"></line>
-        <line x1="${viewBox.minX + viewBox.width}" y1="${horizontalY}" x2="${viewBox.minX + viewBox.width}" y2="${horizontalY + tickSize}"></line>
-        <line x1="${verticalX}" y1="${viewBox.minY}" x2="${verticalX + tickSize}" y2="${viewBox.minY}"></line>
-        <line x1="${verticalX}" y1="${viewBox.minY + viewBox.height}" x2="${verticalX + tickSize}" y2="${viewBox.minY + viewBox.height}"></line>
+        <line x1="${viewBox.minX}" y1="${viewBox.minY + viewBox.height}" x2="${viewBox.minX}" y2="${horizontalY + tickSize}"></line>
+        <line x1="${viewBox.minX + viewBox.width}" y1="${viewBox.minY + viewBox.height}" x2="${viewBox.minX + viewBox.width}" y2="${horizontalY + tickSize}"></line>
+        <line x1="${verticalX - tickSize}" y1="${viewBox.minY}" x2="${viewBox.minX}" y2="${viewBox.minY}"></line>
+        <line x1="${verticalX - tickSize}" y1="${viewBox.minY + viewBox.height}" x2="${viewBox.minX}" y2="${viewBox.minY + viewBox.height}"></line>
       </g>`
       : '';
 
