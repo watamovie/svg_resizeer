@@ -46,6 +46,9 @@
   const transparentBackgroundCheckbox = document.getElementById('transparentBackground');
   const showDimensionsCheckbox = document.getElementById('showDimensions');
   const showDimensionLabelsCheckbox = document.getElementById('showDimensionLabels');
+  const showPerCharacterDimensionsCheckbox = document.getElementById(
+    'showPerCharacterDimensions'
+  );
   const roundDimensionValuesCheckbox = document.getElementById('roundDimensionValues');
   const showDrillHolesCheckbox = document.getElementById('showDrillHoles');
   const drillHoleOffsetInput = document.getElementById('drillHoleOffset');
@@ -57,6 +60,9 @@
     : null;
   const showDimensionLabelsControl = showDimensionLabelsCheckbox
     ? showDimensionLabelsCheckbox.closest('.checkbox')
+    : null;
+  const showPerCharacterDimensionsControl = showPerCharacterDimensionsCheckbox
+    ? showPerCharacterDimensionsCheckbox.closest('.checkbox')
     : null;
   const roundDimensionValuesControl = roundDimensionValuesCheckbox
     ? roundDimensionValuesCheckbox.closest('.checkbox')
@@ -183,6 +189,92 @@
       return bbox;
     }
     return null;
+  }
+
+  function getPerCharacterBounds(svgEl) {
+    if (!svgEl) return [];
+    const container = ensureMeasurementContainer();
+    const clone = svgEl.cloneNode(true);
+    clone.removeAttribute('width');
+    clone.removeAttribute('height');
+    if (!clone.hasAttribute('xmlns')) {
+      clone.setAttribute('xmlns', 'http://www.w3.org/2000/svg');
+    }
+    container.appendChild(clone);
+
+    const bounds = [];
+
+    try {
+      const textElements = clone.querySelectorAll('text');
+      textElements.forEach((textEl, textIndex) => {
+        if (
+          !textEl ||
+          typeof textEl.getNumberOfChars !== 'function' ||
+          typeof textEl.getExtentOfChar !== 'function'
+        ) {
+          return;
+        }
+        const charCount = textEl.getNumberOfChars();
+        if (!Number.isFinite(charCount) || charCount <= 0) {
+          return;
+        }
+        const rawText = textEl.textContent || '';
+        const charArray = Array.from(rawText);
+
+        for (let i = 0; i < charCount; i += 1) {
+          let extent;
+          try {
+            extent = textEl.getExtentOfChar(i);
+          } catch (error) {
+            extent = null;
+          }
+
+          if (
+            !extent ||
+            !Number.isFinite(extent.x) ||
+            !Number.isFinite(extent.y) ||
+            !Number.isFinite(extent.width) ||
+            !Number.isFinite(extent.height) ||
+            extent.width <= 0 ||
+            extent.height <= 0
+          ) {
+            continue;
+          }
+
+          const charIndex = Math.min(i, charArray.length - 1);
+          const character = charIndex >= 0 ? charArray[charIndex] : '';
+
+          bounds.push({
+            character,
+            x: extent.x,
+            y: extent.y,
+            width: extent.width,
+            height: extent.height,
+            right: extent.x + extent.width,
+            bottom: extent.y + extent.height,
+            textIndex,
+            charIndex: i,
+          });
+        }
+      });
+    } finally {
+      container.removeChild(clone);
+    }
+
+    bounds.sort((a, b) => {
+      if (a.textIndex !== b.textIndex) {
+        return a.textIndex - b.textIndex;
+      }
+      if (a.charIndex !== b.charIndex) {
+        return a.charIndex - b.charIndex;
+      }
+      if (a.x !== b.x) {
+        return a.x - b.x;
+      }
+      return a.y - b.y;
+    });
+
+    return bounds;
   }
 
   function getColorResolverContext() {
@@ -1354,6 +1446,7 @@
     const {
       includeDimensions = true,
       showDimensionLabels = true,
+      showPerCharacterDimensions = false,
       roundDimensionDisplay = false,
       backgroundColor = '#ffffff',
       transparentBackground = false,
@@ -1396,6 +1489,11 @@
       .map(([name, value]) => `${name}="${value}"`)
       .join(' ');
 
+    const perCharacterBounds = showPerCharacterDimensions
+      ? getPerCharacterBounds(svgEl)
+      : [];
+    const hasPerCharacterDimensions = perCharacterBounds.length > 0;
+
     const marginBase = Math.max(Math.max(viewBox.width, viewBox.height) * 0.12, 24);
     const scaleRef = Math.max(viewBox.width, viewBox.height) || 1;
     const strokeWidth = Math.max(scaleRef * 0.004, 0.75);
@@ -1419,7 +1517,9 @@
       : 0;
     const bottomMargin = Math.max(marginBase, baseBottomMargin + footerBlockHeight);
     const rightMargin = marginBase;
-    const topMargin = marginBase;
+    const topMargin = hasPerCharacterDimensions
+      ? Math.max(marginBase, dimOffset + tickSize + labelGap + fontSize * 1.1)
+      : marginBase;
     const leftMargin = Math.max(
       marginBase,
       dimOffset + tickSize + labelGap + fontSize * 0.9
@@ -1456,7 +1556,10 @@
       ? escapeXml(normalizedFooterText)
       : '';
 
-    const defs = includeDimensions
+    const shouldIncludeDimensionMarkers =
+      includeDimensions || (showPerCharacterDimensions && hasPerCharacterDimensions);
+
+    const defs = shouldIncludeDimensionMarkers
       ? `
       <defs data-generated-by="dimension-overlay">
         <marker id="${markerIdBase}-start" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto" markerUnits="strokeWidth">
@@ -1512,6 +1615,93 @@
         ? `高さ ${heightValueText}`
         : '高さ'
       : heightValueText;
+
+    let perCharacterDimensionLines = '';
+    let perCharacterDimensionLabels = '';
+
+    if (hasPerCharacterDimensions) {
+      const perCharacterLineY = viewBox.minY - dimOffset;
+      const perCharacterLabelY = perCharacterLineY - (labelGap + fontSize);
+      const charLineElements = [];
+      const charLabelElements = [];
+
+      perCharacterBounds.forEach((bound, index) => {
+        const left = Number(bound.x);
+        const right = Number(bound.right);
+        const top = Number(bound.y);
+        const width = Number(bound.width);
+
+        if (
+          !Number.isFinite(left) ||
+          !Number.isFinite(right) ||
+          !Number.isFinite(top) ||
+          !Number.isFinite(width) ||
+          width <= 0
+        ) {
+          return;
+        }
+
+        const widthRatio =
+          Number.isFinite(viewBox.width) && viewBox.width > 0
+            ? width / viewBox.width
+            : null;
+        const charWidthPx =
+          Number.isFinite(widthRatio) && Number.isFinite(targetWidthPx)
+            ? targetWidthPx * widthRatio
+            : null;
+        const charDisplayWidth =
+          Number.isFinite(charWidthPx) && charWidthPx > 0
+            ? conversion.fromPx(charWidthPx)
+            : null;
+        const formattedCharWidth = formatDimensionDisplay(charDisplayWidth, {
+          round: roundDimensionDisplay,
+        });
+        const charValueText = formattedCharWidth
+          ? `${approxPrefix}${formattedCharWidth}${unitLabel}`
+          : '';
+
+        const rawCharacter =
+          typeof bound.character === 'string' ? bound.character : '';
+        const isWhitespace =
+          rawCharacter !== '' && rawCharacter.trim().length === 0;
+        const baseLabelRaw = isWhitespace
+          ? `${index + 1}文字目（空白）`
+          : rawCharacter
+          ? `${index + 1}文字目「${rawCharacter}」`
+          : `${index + 1}文字目`;
+        const labelTextRaw = charValueText
+          ? `${baseLabelRaw} ${charValueText}`
+          : baseLabelRaw;
+        const sanitizedLabelText = escapeXml(labelTextRaw);
+
+        const charCenter = left + width / 2;
+        const extensionTarget = top > perCharacterLineY ? top : perCharacterLineY;
+
+        charLineElements.push(
+          `<line x1="${left}" y1="${perCharacterLineY}" x2="${right}" y2="${perCharacterLineY}" marker-start="url(#${markerIdBase}-start)" marker-end="url(#${markerIdBase}-end)"></line>`,
+          `<line x1="${left}" y1="${perCharacterLineY}" x2="${left}" y2="${extensionTarget}" stroke-dasharray="${strokeWidth * 2}"></line>`,
+          `<line x1="${right}" y1="${perCharacterLineY}" x2="${right}" y2="${extensionTarget}" stroke-dasharray="${strokeWidth * 2}"></line>`
+        );
+
+        charLabelElements.push(
+          `<text x="${charCenter}" y="${perCharacterLabelY}" text-anchor="middle" dominant-baseline="text-before-edge">${sanitizedLabelText}</text>`
+        );
+      });
+
+      if (charLineElements.length) {
+        perCharacterDimensionLines = `
+      <g data-generated-by="dimension-overlay" fill="none" stroke="${dimensionColors.stroke}" stroke-width="${strokeWidth}" stroke-linecap="round">
+        ${charLineElements.join('\n        ')}
+      </g>`;
+      }
+
+      if (charLabelElements.length) {
+        perCharacterDimensionLabels = `
+      <g data-generated-by="dimension-overlay" fill="${dimensionColors.text}" font-size="${fontSize}" font-weight="600" font-family="'Segoe UI', 'Hiragino Sans', 'Yu Gothic', sans-serif">
+        ${charLabelElements.join('\n        ')}
+      </g>`;
+      }
+    }
 
     let drillHolesGroup = '';
     if (
@@ -1633,7 +1823,9 @@
           ${childMarkup}
         </g>
         ${drillHolesGroup}
+        ${perCharacterDimensionLines}
         ${dimensionLines}
+        ${perCharacterDimensionLabels}
         ${labels}
         ${footerTextElement}
       </svg>
@@ -1807,11 +1999,20 @@
         }
       }
 
+      const shouldShowDimensions = showDimensionsCheckbox
+        ? showDimensionsCheckbox.checked
+        : true;
+      const shouldShowPerCharacterDimensions =
+        shouldShowDimensions && showPerCharacterDimensionsCheckbox
+          ? showPerCharacterDimensionsCheckbox.checked
+          : false;
+
       const svgString = generateResizedSvg(svgEl, targetWidthPx, targetHeightPx, unit, {
-        includeDimensions: showDimensionsCheckbox ? showDimensionsCheckbox.checked : true,
+        includeDimensions: shouldShowDimensions,
         showDimensionLabels: showDimensionLabelsCheckbox
           ? showDimensionLabelsCheckbox.checked
           : true,
+        showPerCharacterDimensions: shouldShowPerCharacterDimensions,
         roundDimensionDisplay: roundDimensionValuesCheckbox
           ? roundDimensionValuesCheckbox.checked
           : false,
@@ -2082,6 +2283,11 @@
       enabled
     );
     setCheckboxControlState(
+      showPerCharacterDimensionsCheckbox,
+      showPerCharacterDimensionsControl,
+      enabled
+    );
+    setCheckboxControlState(
       roundDimensionValuesCheckbox,
       roundDimensionValuesControl,
       enabled
@@ -2282,6 +2488,12 @@
 
   if (showDimensionLabelsCheckbox) {
     showDimensionLabelsCheckbox.addEventListener('change', () => {
+      refreshPreviewIfReady();
+    });
+  }
+
+  if (showPerCharacterDimensionsCheckbox) {
+    showPerCharacterDimensionsCheckbox.addEventListener('change', () => {
       refreshPreviewIfReady();
     });
   }
