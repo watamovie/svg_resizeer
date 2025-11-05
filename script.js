@@ -47,6 +47,9 @@
   const showDimensionsCheckbox = document.getElementById('showDimensions');
   const showDimensionLabelsCheckbox = document.getElementById('showDimensionLabels');
   const roundDimensionValuesCheckbox = document.getElementById('roundDimensionValues');
+  const showCharacterDimensionsCheckbox = document.getElementById(
+    'showCharacterDimensions'
+  );
   const showDrillHolesCheckbox = document.getElementById('showDrillHoles');
   const drillHoleOffsetInput = document.getElementById('drillHoleOffset');
   const drillHoleDiameterInput = document.getElementById('drillHoleDiameter');
@@ -1221,6 +1224,25 @@
     return svgEl;
   }
 
+  function parseViewBox(value) {
+    if (typeof value !== 'string') {
+      return null;
+    }
+    const parts = value
+      .trim()
+      .split(/[\s,]+/)
+      .map((part) => Number.parseFloat(part));
+    if (parts.length !== 4 || parts.some((part) => !Number.isFinite(part))) {
+      return null;
+    }
+    return {
+      minX: parts[0],
+      minY: parts[1],
+      width: parts[2],
+      height: parts[3],
+    };
+  }
+
   function getMetrics(svgEl) {
     const widthAttr = svgEl.getAttribute('width');
     const heightAttr = svgEl.getAttribute('height');
@@ -1265,6 +1287,144 @@
     svgEl.setAttribute('viewBox', `${viewBox.minX} ${viewBox.minY} ${viewBox.width} ${viewBox.height}`);
 
     return { width, height, viewBox };
+  }
+
+  function collectTextCharacters(textEl) {
+    if (!textEl || typeof document === 'undefined') {
+      return [];
+    }
+    if (typeof NodeFilter === 'undefined' || typeof document.createTreeWalker !== 'function') {
+      const fallbackText = typeof textEl.textContent === 'string' ? textEl.textContent : '';
+      return fallbackText ? Array.from(fallbackText) : [];
+    }
+    const characters = [];
+    try {
+      const walker = document.createTreeWalker(
+        textEl,
+        NodeFilter.SHOW_TEXT,
+        null
+      );
+      while (walker.nextNode()) {
+        const node = walker.currentNode;
+        if (!node) continue;
+        const value = typeof node.textContent === 'string' ? node.textContent : '';
+        if (!value) continue;
+        for (const char of Array.from(value)) {
+          characters.push(char);
+        }
+      }
+    } catch (error) {
+      console.error(error);
+      return characters;
+    }
+    return characters;
+  }
+
+  function getCharacterMeasurements(svgEl, metrics = null) {
+    if (!svgEl) return [];
+    const results = [];
+    const container = ensureMeasurementContainer();
+    if (!container) return results;
+
+    const clone = svgEl.cloneNode(true);
+    clone.removeAttribute('width');
+    clone.removeAttribute('height');
+
+    const referenceViewBox =
+      metrics && metrics.viewBox
+        ? metrics.viewBox
+        : svgEl.hasAttribute('viewBox')
+        ? parseViewBox(svgEl.getAttribute('viewBox'))
+        : null;
+
+    if (referenceViewBox) {
+      clone.setAttribute(
+        'viewBox',
+        `${referenceViewBox.minX} ${referenceViewBox.minY} ${referenceViewBox.width} ${referenceViewBox.height}`
+      );
+      clone.setAttribute('width', referenceViewBox.width);
+      clone.setAttribute('height', referenceViewBox.height);
+    }
+    if (!clone.hasAttribute('xmlns')) {
+      clone.setAttribute('xmlns', 'http://www.w3.org/2000/svg');
+    }
+
+    container.appendChild(clone);
+
+    try {
+      const textElements = Array.from(clone.querySelectorAll('text'));
+      textElements.forEach((textEl) => {
+        if (!textEl) return;
+        let charCount = 0;
+        try {
+          if (typeof textEl.getNumberOfChars === 'function') {
+            charCount = textEl.getNumberOfChars();
+          }
+        } catch (error) {
+          console.warn('Failed to get character count for text element.', error);
+          charCount = 0;
+        }
+        if (!charCount || charCount <= 0) {
+          return;
+        }
+
+        const characters = collectTextCharacters(textEl);
+
+        for (let i = 0; i < charCount; i += 1) {
+          let extent = null;
+          try {
+            if (typeof textEl.getExtentOfChar === 'function') {
+              extent = textEl.getExtentOfChar(i);
+            }
+          } catch (error) {
+            console.warn('Failed to measure character extent.', error);
+            extent = null;
+          }
+
+          if (
+            !extent ||
+            !Number.isFinite(extent.x) ||
+            !Number.isFinite(extent.y) ||
+            !Number.isFinite(extent.width) ||
+            !Number.isFinite(extent.height) ||
+            extent.width <= 0 ||
+            extent.height <= 0
+          ) {
+            continue;
+          }
+
+          const nextIndex = results.length + 1;
+          const character = characters[i] ?? '';
+
+          let label = character;
+          if (!character) {
+            label = `文字${nextIndex}`;
+          } else if (character === ' ') {
+            label = '半角空白';
+          } else if (character === '\u3000') {
+            label = '全角空白';
+          } else if (character === '\t') {
+            label = 'タブ';
+          }
+
+          results.push({
+            index: nextIndex,
+            character,
+            label,
+            x: extent.x,
+            y: extent.y,
+            width: extent.width,
+            height: extent.height,
+          });
+        }
+      });
+    } finally {
+      if (clone.parentNode === container) {
+        container.removeChild(clone);
+      }
+    }
+
+    return results;
   }
 
   function updateDimensionInputs(metrics) {
@@ -1355,6 +1515,8 @@
       includeDimensions = true,
       showDimensionLabels = true,
       roundDimensionDisplay = false,
+      includeCharacterDimensions = false,
+      characterMeasurements = [],
       backgroundColor = '#ffffff',
       transparentBackground = false,
       dimensionTextScale = 1,
@@ -1410,6 +1572,84 @@
     const labelGap = Math.max(fontSize * 0.25, strokeWidth * 4, tickSize * 0.5, 6);
     const dimOffset = Math.max(marginBase * 0.6, tickSize + fontSize * 0.35);
 
+    const rawCharacterMeasurements =
+      includeCharacterDimensions && Array.isArray(characterMeasurements)
+        ? characterMeasurements
+        : [];
+    const characterLabelFontSize = Math.max(fontSize * 0.7, 9);
+    const characterLabelGap = Math.max(
+      characterLabelFontSize * 0.4,
+      strokeWidth * 3,
+      4
+    );
+    const characterOffsetBase = Math.max(tickSize * 0.7, fontSize * 0.5, 8);
+    const characterSupportDash = Math.max(strokeWidth * 2, 1.5);
+    const preparedCharacterMeasurements = [];
+    let minCharacterOverlayY = Infinity;
+
+    if (rawCharacterMeasurements.length) {
+      rawCharacterMeasurements.forEach((entry) => {
+        if (!entry) return;
+        const x = Number(entry.x);
+        const y = Number(entry.y);
+        const width = Number(entry.width);
+        const height = Number(entry.height);
+        if (
+          !Number.isFinite(x) ||
+          !Number.isFinite(y) ||
+          !Number.isFinite(width) ||
+          !Number.isFinite(height) ||
+          width <= 0 ||
+          height <= 0
+        ) {
+          return;
+        }
+
+        let indexValue = Number(entry.index);
+        if (!Number.isFinite(indexValue) || indexValue <= 0) {
+          indexValue = preparedCharacterMeasurements.length + 1;
+        }
+        indexValue = Math.floor(indexValue);
+
+        let labelValue = '';
+        if (typeof entry.label === 'string' && entry.label) {
+          labelValue = entry.label;
+        } else if (typeof entry.character === 'string' && entry.character) {
+          labelValue = entry.character;
+        }
+        if (typeof labelValue === 'string') {
+          labelValue = labelValue.replace(/\s+/g, ' ').trim();
+        }
+        if (!labelValue) {
+          labelValue = `文字${indexValue}`;
+        }
+
+        const offset = Math.max(characterOffsetBase, height * 0.2);
+        const lineY = y - offset;
+        const labelBaselineY = lineY - characterLabelGap;
+        const labelTopY = labelBaselineY - characterLabelFontSize;
+
+        if (Number.isFinite(labelTopY)) {
+          minCharacterOverlayY = Math.min(minCharacterOverlayY, labelTopY);
+        }
+
+        preparedCharacterMeasurements.push({
+          index: indexValue,
+          character: typeof entry.character === 'string' ? entry.character : '',
+          label: labelValue,
+          x,
+          y,
+          width,
+          height,
+          lineY,
+          labelBaselineY,
+        });
+      });
+    }
+
+    const hasCharacterDimensions =
+      includeCharacterDimensions && preparedCharacterMeasurements.length > 0;
+
     const baseBottomMargin = includeDimensions
       ? dimOffset + tickSize + labelGap + fontSize * 1.1
       : marginBase;
@@ -1419,7 +1659,14 @@
       : 0;
     const bottomMargin = Math.max(marginBase, baseBottomMargin + footerBlockHeight);
     const rightMargin = marginBase;
-    const topMargin = marginBase;
+    let topMargin = marginBase;
+    if (hasCharacterDimensions && Number.isFinite(minCharacterOverlayY)) {
+      const characterMargin = viewBox.minY - minCharacterOverlayY;
+      if (Number.isFinite(characterMargin) && characterMargin > 0) {
+        const extraPadding = Math.max(strokeWidth * 4, characterLabelFontSize * 0.5);
+        topMargin = Math.max(topMargin, characterMargin + extraPadding);
+      }
+    }
     const leftMargin = Math.max(
       marginBase,
       dimOffset + tickSize + labelGap + fontSize * 0.9
@@ -1456,7 +1703,8 @@
       ? escapeXml(normalizedFooterText)
       : '';
 
-    const defs = includeDimensions
+    const needsDimensionMarkers = includeDimensions || hasCharacterDimensions;
+    const defs = needsDimensionMarkers
       ? `
       <defs data-generated-by="dimension-overlay">
         <marker id="${markerIdBase}-start" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto" markerUnits="strokeWidth">
@@ -1512,6 +1760,63 @@
         ? `高さ ${heightValueText}`
         : '高さ'
       : heightValueText;
+
+    let characterDimensionsGroup = '';
+    if (hasCharacterDimensions) {
+      const widthScale =
+        Number.isFinite(viewBox.width) && viewBox.width !== 0
+          ? targetWidthPx / viewBox.width
+          : null;
+
+      const characterElements = preparedCharacterMeasurements
+        .map((entry) => {
+          const left = entry.x;
+          const right = entry.x + entry.width;
+          const centerX = left + entry.width / 2;
+          const lineY = entry.lineY;
+          const labelBaselineY = entry.labelBaselineY;
+
+          let charValueText = '';
+          if (Number.isFinite(widthScale)) {
+            const widthPx = entry.width * widthScale;
+            const displayValue = conversion.fromPx(widthPx);
+            const formattedValue = formatDimensionDisplay(displayValue, {
+              round: roundDimensionDisplay,
+            });
+            if (formattedValue) {
+              charValueText = `${approxPrefix}${formattedValue}${unitLabel}`;
+            }
+          }
+
+          const normalizedLabel =
+            typeof entry.label === 'string'
+              ? entry.label.replace(/\s+/g, ' ').trim()
+              : '';
+          const baseLabel = normalizedLabel || `文字${entry.index}`;
+          const labelParts = [`「${baseLabel}」`];
+          if (charValueText) {
+            labelParts.push(charValueText);
+          }
+          const combinedLabel = labelParts.join(' ').trim();
+          const safeLabel = combinedLabel ? escapeXml(combinedLabel) : '';
+
+          return `
+        <g data-character-dimension="${entry.index}">
+          <line x1="${left}" y1="${lineY}" x2="${right}" y2="${lineY}" marker-start="url(#${markerIdBase}-start)" marker-end="url(#${markerIdBase}-end)"></line>
+          <line x1="${left}" y1="${entry.y}" x2="${left}" y2="${lineY}" stroke-dasharray="${characterSupportDash}"></line>
+          <line x1="${right}" y1="${entry.y}" x2="${right}" y2="${lineY}" stroke-dasharray="${characterSupportDash}"></line>
+          <text x="${centerX}" y="${labelBaselineY}" fill="${dimensionColors.text}" font-size="${characterLabelFontSize}" font-weight="500" font-family="'Segoe UI', 'Hiragino Sans', 'Yu Gothic', sans-serif" text-anchor="middle" dominant-baseline="text-after-edge">${safeLabel}</text>
+        </g>`;
+        })
+        .filter(Boolean);
+
+      if (characterElements.length) {
+        characterDimensionsGroup = `
+      <g data-generated-by="character-dimension-overlay" stroke="${dimensionColors.stroke}" stroke-width="${strokeWidth}" stroke-linecap="round" fill="none">
+        ${characterElements.join('\n        ')}
+      </g>`;
+      }
+    }
 
     let drillHolesGroup = '';
     if (
@@ -1634,6 +1939,7 @@
         </g>
         ${drillHolesGroup}
         ${dimensionLines}
+        ${characterDimensionsGroup}
         ${labels}
         ${footerTextElement}
       </svg>
@@ -1767,6 +2073,15 @@
         removeAllStrokes(svgEl);
       }
       const metrics = getMetrics(svgEl);
+      let characterMeasurementsData = [];
+      if (showCharacterDimensionsCheckbox && showCharacterDimensionsCheckbox.checked) {
+        try {
+          characterMeasurementsData = getCharacterMeasurements(svgEl, metrics);
+        } catch (error) {
+          console.warn('Failed to collect per-character measurements.', error);
+          characterMeasurementsData = [];
+        }
+      }
       let contentRatio = null;
       if (
         metrics &&
@@ -1828,6 +2143,9 @@
         precomputedMetrics: metrics,
         includeFooterText: shouldIncludeFooterText,
         footerText: shouldIncludeFooterText ? normalizedFooterTextInput : '',
+        includeCharacterDimensions:
+          showCharacterDimensionsCheckbox && showCharacterDimensionsCheckbox.checked,
+        characterMeasurements: characterMeasurementsData,
       });
       previewArea.innerHTML = svgString;
       updateDownloads(svgString, targetWidthPx, targetHeightPx, {
@@ -2288,6 +2606,12 @@
 
   if (roundDimensionValuesCheckbox) {
     roundDimensionValuesCheckbox.addEventListener('change', () => {
+      refreshPreviewIfReady();
+    });
+  }
+
+  if (showCharacterDimensionsCheckbox) {
+    showCharacterDimensionsCheckbox.addEventListener('change', () => {
       refreshPreviewIfReady();
     });
   }
