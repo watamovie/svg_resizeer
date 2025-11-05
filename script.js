@@ -47,6 +47,9 @@
   const showDimensionsCheckbox = document.getElementById('showDimensions');
   const showDimensionLabelsCheckbox = document.getElementById('showDimensionLabels');
   const roundDimensionValuesCheckbox = document.getElementById('roundDimensionValues');
+  const showCharacterDimensionsCheckbox = document.getElementById(
+    'showCharacterDimensions'
+  );
   const showDrillHolesCheckbox = document.getElementById('showDrillHoles');
   const drillHoleOffsetInput = document.getElementById('drillHoleOffset');
   const drillHoleDiameterInput = document.getElementById('drillHoleDiameter');
@@ -183,6 +186,76 @@
       return bbox;
     }
     return null;
+  }
+
+  function getCharacterBoundingBoxes(svgEl) {
+    if (!svgEl) {
+      return [];
+    }
+    const container = ensureMeasurementContainer();
+    if (!container) {
+      return [];
+    }
+    const clone = svgEl.cloneNode(true);
+    clone.removeAttribute('width');
+    clone.removeAttribute('height');
+    if (!clone.hasAttribute('xmlns')) {
+      clone.setAttribute('xmlns', 'http://www.w3.org/2000/svg');
+    }
+    container.appendChild(clone);
+    const results = [];
+    try {
+      const textElements = Array.from(clone.querySelectorAll('text'));
+      textElements.forEach((textEl) => {
+        let charCount = 0;
+        try {
+          charCount =
+            typeof textEl.getNumberOfChars === 'function'
+              ? textEl.getNumberOfChars()
+              : 0;
+        } catch {
+          charCount = 0;
+        }
+        if (!charCount) {
+          return;
+        }
+        const characters = Array.from(textEl.textContent || '');
+        for (let index = 0; index < charCount; index += 1) {
+          let rect = null;
+          try {
+            rect =
+              typeof textEl.getExtentOfChar === 'function'
+                ? textEl.getExtentOfChar(index)
+                : null;
+          } catch {
+            rect = null;
+          }
+          if (
+            !rect ||
+            !Number.isFinite(rect.x) ||
+            !Number.isFinite(rect.y) ||
+            !Number.isFinite(rect.width) ||
+            !Number.isFinite(rect.height) ||
+            rect.width <= 0 ||
+            rect.height <= 0
+          ) {
+            continue;
+          }
+          results.push({
+            char: characters[index] ?? '',
+            x: rect.x,
+            y: rect.y,
+            width: rect.width,
+            height: rect.height,
+          });
+        }
+      });
+    } finally {
+      if (clone.parentNode === container) {
+        container.removeChild(clone);
+      }
+    }
+    return results;
   }
 
   function getColorResolverContext() {
@@ -1166,6 +1239,25 @@
     return text.replace(/[&<>"']/g, (char) => replacements[char] || char);
   }
 
+  function describeCharacterForLabel(char) {
+    if (typeof char !== 'string' || !char) {
+      return '文字';
+    }
+    if (char === ' ') {
+      return '空白';
+    }
+    if (char === '\u3000') {
+      return '全角空白';
+    }
+    if (char === '\n') {
+      return '改行';
+    }
+    if (char === '\t') {
+      return 'タブ';
+    }
+    return `「${char}」`;
+  }
+
   function sanitizeFilename(name) {
     if (typeof name !== 'string') {
       return '';
@@ -1364,9 +1456,13 @@
       precomputedMetrics = null,
       includeFooterText = false,
       footerText = '',
+      includeCharacterDimensions = false,
     } = options;
     const metrics = precomputedMetrics || getMetrics(svgEl);
     const viewBox = metrics.viewBox;
+    const characterBoxes = includeCharacterDimensions
+      ? getCharacterBoundingBoxes(svgEl)
+      : [];
     const serializer = new XMLSerializer();
 
     const clone = svgEl.cloneNode(true);
@@ -1419,18 +1515,11 @@
       : 0;
     const bottomMargin = Math.max(marginBase, baseBottomMargin + footerBlockHeight);
     const rightMargin = marginBase;
-    const topMargin = marginBase;
+    let topMargin = marginBase;
     const leftMargin = Math.max(
       marginBase,
       dimOffset + tickSize + labelGap + fontSize * 0.9
     );
-
-    const finalViewBox = {
-      minX: viewBox.minX - leftMargin,
-      minY: viewBox.minY - topMargin,
-      width: viewBox.width + leftMargin + rightMargin,
-      height: viewBox.height + topMargin + bottomMargin,
-    };
 
     const horizontalY = viewBox.minY + viewBox.height + dimOffset;
     const verticalX = viewBox.minX - dimOffset;
@@ -1456,7 +1545,135 @@
       ? escapeXml(normalizedFooterText)
       : '';
 
-    const defs = includeDimensions
+    const conversion = getConversion(unit);
+    const unitLabel = conversion.label;
+    const unitSuffix = conversion.suffix;
+    const approxPrefix = roundDimensionDisplay ? '約' : '';
+
+    let characterDimensionLines = '';
+    let characterDimensionLabels = '';
+    let hasCharacterDimensions = false;
+
+    const widthScale =
+      Number.isFinite(viewBox.width) &&
+      Number.isFinite(targetWidthPx) &&
+      viewBox.width > 0 &&
+      targetWidthPx > 0
+        ? targetWidthPx / viewBox.width
+        : null;
+
+    if (
+      includeCharacterDimensions &&
+      characterBoxes &&
+      characterBoxes.length &&
+      Number.isFinite(widthScale) &&
+      widthScale > 0
+    ) {
+      const sortedCharacterBoxes = characterBoxes
+        .slice()
+        .sort((a, b) => (a.y === b.y ? a.x - b.x : a.y - b.y));
+      const charLabelFontSize = Math.max(fontSize * 0.75, 10);
+      const charLineGap = Math.max(
+        tickSize * 0.8,
+        strokeWidth * 6,
+        charLabelFontSize * 0.4,
+        6
+      );
+      const charLabelGap = Math.max(
+        fontSize * 0.3,
+        strokeWidth * 4,
+        charLabelFontSize * 0.4,
+        6
+      );
+      const charLineElements = [];
+      const charLabelElements = [];
+      let minCharFeatureY = Infinity;
+
+      sortedCharacterBoxes.forEach((box) => {
+        const charWidthPx = box.width * widthScale;
+        if (!Number.isFinite(charWidthPx) || charWidthPx <= 0) {
+          return;
+        }
+        const displayWidth = conversion.fromPx(charWidthPx);
+        const formattedWidth = formatDimensionDisplay(displayWidth, {
+          round: roundDimensionDisplay,
+        });
+        if (!formattedWidth) {
+          return;
+        }
+        const charLeft = box.x;
+        const charRight = box.x + box.width;
+        const charTop = box.y;
+        if (
+          !Number.isFinite(charLeft) ||
+          !Number.isFinite(charRight) ||
+          !Number.isFinite(charTop)
+        ) {
+          return;
+        }
+        const lineY = charTop - charLineGap;
+        if (!Number.isFinite(lineY) || lineY >= charTop) {
+          return;
+        }
+        const labelY = lineY - charLabelGap;
+        if (!Number.isFinite(labelY)) {
+          return;
+        }
+        const charCenterX = charLeft + box.width / 2;
+        const charDescription = describeCharacterForLabel(box.char);
+        const labelText = `${charDescription}：${approxPrefix}${formattedWidth}${unitLabel}`;
+        const sanitizedLabel = escapeXml(labelText);
+
+        charLineElements.push(
+          `<line x1="${charLeft}" y1="${charTop}" x2="${charLeft}" y2="${lineY}" stroke-dasharray="${strokeWidth * 2}"></line>`
+        );
+        charLineElements.push(
+          `<line x1="${charRight}" y1="${charTop}" x2="${charRight}" y2="${lineY}" stroke-dasharray="${strokeWidth * 2}"></line>`
+        );
+        charLineElements.push(
+          `<line x1="${charLeft}" y1="${lineY}" x2="${charRight}" y2="${lineY}" marker-start="url(#${markerIdBase}-start)" marker-end="url(#${markerIdBase}-end)"></line>`
+        );
+
+        charLabelElements.push(
+          `<text x="${charCenterX}" y="${labelY}" text-anchor="middle" dominant-baseline="text-before-edge">${sanitizedLabel}</text>`
+        );
+
+        minCharFeatureY = Math.min(minCharFeatureY, labelY);
+      });
+
+      if (charLineElements.length) {
+        hasCharacterDimensions = true;
+        characterDimensionLines = `
+      <g data-generated-by="character-dimension-overlay" fill="none" stroke="${dimensionColors.stroke}" stroke-width="${strokeWidth}" stroke-linecap="round">
+        ${charLineElements.join('
+        ')}
+      </g>`;
+        characterDimensionLabels = `
+      <g data-generated-by="character-dimension-overlay" fill="${dimensionColors.text}" font-size="${charLabelFontSize}" font-weight="500" font-family="'Segoe UI', 'Hiragino Sans', 'Yu Gothic', sans-serif">
+        ${charLabelElements.join('
+        ')}
+      </g>`;
+
+        if (Number.isFinite(minCharFeatureY)) {
+          const marginDelta = viewBox.minY - minCharFeatureY;
+          if (marginDelta > 0) {
+            const requiredMargin = marginDelta + Math.max(strokeWidth * 2, 4);
+            topMargin = Math.max(topMargin, requiredMargin);
+          }
+        }
+      }
+    }
+
+    topMargin = Math.max(topMargin, marginBase);
+
+    const finalViewBox = {
+      minX: viewBox.minX - leftMargin,
+      minY: viewBox.minY - topMargin,
+      width: viewBox.width + leftMargin + rightMargin,
+      height: viewBox.height + topMargin + bottomMargin,
+    };
+
+    const defs = includeDimensions || hasCharacterDimensions
       ? `
       <defs data-generated-by="dimension-overlay">
         <marker id="${markerIdBase}-start" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto" markerUnits="strokeWidth">
@@ -1484,18 +1701,188 @@
       </g>`
       : '';
 
-    const conversion = getConversion(unit);
     const displayWidth = conversion.fromPx(targetWidthPx);
     const displayHeight = conversion.fromPx(targetHeightPx);
-    const unitLabel = conversion.label;
-    const unitSuffix = conversion.suffix;
     const formattedDisplayWidth = formatDimensionDisplay(displayWidth, {
       round: roundDimensionDisplay,
     });
     const formattedDisplayHeight = formatDimensionDisplay(displayHeight, {
       round: roundDimensionDisplay,
     });
+    const markerIdBase = 'dimension-arrow-marker';
+
+    const dimensionColors = getDimensionColors({
+      transparentBackground,
+      backgroundColor,
+    });
+    const drillHoleFillColor =
+      normalizeHexColor(backgroundColor) || backgroundColor || '#ffffff';
+    const sanitizedFooterText = shouldIncludeFooterText
+      ? escapeXml(normalizedFooterText)
+      : '';
+
+    const conversion = getConversion(unit);
+    const unitLabel = conversion.label;
+    const unitSuffix = conversion.suffix;
     const approxPrefix = roundDimensionDisplay ? '約' : '';
+
+    let characterDimensionLines = '';
+    let characterDimensionLabels = '';
+    let hasCharacterDimensions = false;
+
+    const widthScale =
+      Number.isFinite(viewBox.width) &&
+      Number.isFinite(targetWidthPx) &&
+      viewBox.width > 0 &&
+      targetWidthPx > 0
+        ? targetWidthPx / viewBox.width
+        : null;
+
+    if (
+      includeCharacterDimensions &&
+      characterBoxes &&
+      characterBoxes.length &&
+      Number.isFinite(widthScale) &&
+      widthScale > 0
+    ) {
+      const sortedCharacterBoxes = characterBoxes
+        .slice()
+        .sort((a, b) => (a.y === b.y ? a.x - b.x : a.y - b.y));
+      const charLabelFontSize = Math.max(fontSize * 0.75, 10);
+      const charLineGap = Math.max(
+        tickSize * 0.8,
+        strokeWidth * 6,
+        charLabelFontSize * 0.4,
+        6
+      );
+      const charLabelGap = Math.max(
+        fontSize * 0.3,
+        strokeWidth * 4,
+        charLabelFontSize * 0.4,
+        6
+      );
+      const charLineElements = [];
+      const charLabelElements = [];
+      let minCharFeatureY = Infinity;
+
+      sortedCharacterBoxes.forEach((box) => {
+        const charWidthPx = box.width * widthScale;
+        if (!Number.isFinite(charWidthPx) || charWidthPx <= 0) {
+          return;
+        }
+        const displayWidth = conversion.fromPx(charWidthPx);
+        const formattedWidth = formatDimensionDisplay(displayWidth, {
+          round: roundDimensionDisplay,
+        });
+        if (!formattedWidth) {
+          return;
+        }
+        const charLeft = box.x;
+        const charRight = box.x + box.width;
+        const charTop = box.y;
+        if (
+          !Number.isFinite(charLeft) ||
+          !Number.isFinite(charRight) ||
+          !Number.isFinite(charTop)
+        ) {
+          return;
+        }
+        const lineY = charTop - charLineGap;
+        if (!Number.isFinite(lineY) || lineY >= charTop) {
+          return;
+        }
+        const labelY = lineY - charLabelGap;
+        if (!Number.isFinite(labelY)) {
+          return;
+        }
+        const charCenterX = charLeft + box.width / 2;
+        const charDescription = describeCharacterForLabel(box.char);
+        const labelText = `${charDescription}：${approxPrefix}${formattedWidth}${unitLabel}`;
+        const sanitizedLabel = escapeXml(labelText);
+
+        charLineElements.push(
+          `<line x1="${charLeft}" y1="${charTop}" x2="${charLeft}" y2="${lineY}" stroke-dasharray="${strokeWidth * 2}"></line>`
+        );
+        charLineElements.push(
+          `<line x1="${charRight}" y1="${charTop}" x2="${charRight}" y2="${lineY}" stroke-dasharray="${strokeWidth * 2}"></line>`
+        );
+        charLineElements.push(
+          `<line x1="${charLeft}" y1="${lineY}" x2="${charRight}" y2="${lineY}" marker-start="url(#${markerIdBase}-start)" marker-end="url(#${markerIdBase}-end)"></line>`
+        );
+
+        charLabelElements.push(
+          `<text x="${charCenterX}" y="${labelY}" text-anchor="middle" dominant-baseline="text-before-edge">${sanitizedLabel}</text>`
+        );
+
+        minCharFeatureY = Math.min(minCharFeatureY, labelY);
+      });
+
+      if (charLineElements.length) {
+        hasCharacterDimensions = true;
+        characterDimensionLines = `
+      <g data-generated-by="character-dimension-overlay" fill="none" stroke="${dimensionColors.stroke}" stroke-width="${strokeWidth}" stroke-linecap="round">
+        ${charLineElements.join('\n        ')}
+      </g>`;
+        characterDimensionLabels = `
+      <g data-generated-by="character-dimension-overlay" fill="${dimensionColors.text}" font-size="${charLabelFontSize}" font-weight="500" font-family="'Segoe UI', 'Hiragino Sans', 'Yu Gothic', sans-serif">
+        ${charLabelElements.join('\n        ')}
+      </g>`;
+
+        if (Number.isFinite(minCharFeatureY)) {
+          const marginDelta = viewBox.minY - minCharFeatureY;
+          if (marginDelta > 0) {
+            const requiredMargin = marginDelta + Math.max(strokeWidth * 2, 4);
+            topMargin = Math.max(topMargin, requiredMargin);
+          }
+        }
+      }
+    }
+
+    topMargin = Math.max(topMargin, marginBase);
+
+    const finalViewBox = {
+      minX: viewBox.minX - leftMargin,
+      minY: viewBox.minY - topMargin,
+      width: viewBox.width + leftMargin + rightMargin,
+      height: viewBox.height + topMargin + bottomMargin,
+    };
+
+    const defs = includeDimensions || hasCharacterDimensions
+      ? `
+      <defs data-generated-by="dimension-overlay">
+        <marker id="${markerIdBase}-start" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto" markerUnits="strokeWidth">
+          <path d="M6 3L0 6V0L6 3Z" fill="${dimensionColors.stroke}"></path>
+        </marker>
+        <marker id="${markerIdBase}-end" markerWidth="8" markerHeight="8" refX="0" refY="3" orient="auto" markerUnits="strokeWidth">
+          <path d="M0 3L6 6V0L0 3Z" fill="${dimensionColors.stroke}"></path>
+        </marker>
+      </defs>`
+      : '';
+
+    const dimensionLines = includeDimensions
+      ? `
+      <g data-generated-by="dimension-overlay" fill="none" stroke="${dimensionColors.stroke}" stroke-width="${strokeWidth}" stroke-linecap="round">
+        <line x1="${viewBox.minX}" y1="${horizontalY}" x2="${viewBox.minX + viewBox.width}" y2="${horizontalY}" marker-start="url(#${markerIdBase}-start)" marker-end="url(#${markerIdBase}-end)"></line>
+        <line x1="${verticalX}" y1="${viewBox.minY}" x2="${verticalX}" y2="${viewBox.minY + viewBox.height}" marker-start="url(#${markerIdBase}-start)" marker-end="url(#${markerIdBase}-end)"></line>
+        <line x1="${viewBox.minX}" y1="${viewBox.minY}" x2="${viewBox.minX}" y2="${horizontalY}" stroke-dasharray="${strokeWidth * 2}"></line>
+        <line x1="${viewBox.minX + viewBox.width}" y1="${viewBox.minY}" x2="${viewBox.minX + viewBox.width}" y2="${horizontalY}" stroke-dasharray="${strokeWidth * 2}"></line>
+        <line x1="${viewBox.minX}" y1="${viewBox.minY}" x2="${verticalX}" y2="${viewBox.minY}" stroke-dasharray="${strokeWidth * 2}"></line>
+        <line x1="${viewBox.minX}" y1="${viewBox.minY + viewBox.height}" x2="${verticalX}" y2="${viewBox.minY + viewBox.height}" stroke-dasharray="${strokeWidth * 2}"></line>
+        <line x1="${viewBox.minX}" y1="${horizontalY}" x2="${viewBox.minX}" y2="${horizontalY + tickSize}"></line>
+        <line x1="${viewBox.minX + viewBox.width}" y1="${horizontalY}" x2="${viewBox.minX + viewBox.width}" y2="${horizontalY + tickSize}"></line>
+        <line x1="${verticalX}" y1="${viewBox.minY}" x2="${verticalX - tickSize}" y2="${viewBox.minY}"></line>
+        <line x1="${verticalX}" y1="${viewBox.minY + viewBox.height}" x2="${verticalX - tickSize}" y2="${viewBox.minY + viewBox.height}"></line>
+      </g>`
+      : '';
+
+    const displayWidth = conversion.fromPx(targetWidthPx);
+    const displayHeight = conversion.fromPx(targetHeightPx);
+    const formattedDisplayWidth = formatDimensionDisplay(displayWidth, {
+      round: roundDimensionDisplay,
+    });
+    const formattedDisplayHeight = formatDimensionDisplay(displayHeight, {
+      round: roundDimensionDisplay,
+    });
     const widthValueText = formattedDisplayWidth
       ? `${approxPrefix}${formattedDisplayWidth}${unitLabel}`
       : '';
@@ -1634,7 +2021,9 @@
         </g>
         ${drillHolesGroup}
         ${dimensionLines}
+        ${characterDimensionLines}
         ${labels}
+        ${characterDimensionLabels}
         ${footerTextElement}
       </svg>
     `;
@@ -1828,6 +2217,9 @@
         precomputedMetrics: metrics,
         includeFooterText: shouldIncludeFooterText,
         footerText: shouldIncludeFooterText ? normalizedFooterTextInput : '',
+        includeCharacterDimensions: showCharacterDimensionsCheckbox
+          ? showCharacterDimensionsCheckbox.checked
+          : false,
       });
       previewArea.innerHTML = svgString;
       updateDownloads(svgString, targetWidthPx, targetHeightPx, {
@@ -2064,27 +2456,36 @@
   }
 
   const updateDimensionControlsState = () => {
-    const enabled = showDimensionsCheckbox ? showDimensionsCheckbox.checked : true;
+    const dimensionEnabled = showDimensionsCheckbox
+      ? showDimensionsCheckbox.checked
+      : true;
+    const characterEnabled = showCharacterDimensionsCheckbox
+      ? showCharacterDimensionsCheckbox.checked
+      : false;
+    const anyDimensionFeatureEnabled = dimensionEnabled || characterEnabled;
     if (dimensionFontSizeSlider) {
-      dimensionFontSizeSlider.disabled = !enabled;
-      if (enabled) {
+      dimensionFontSizeSlider.disabled = !anyDimensionFeatureEnabled;
+      if (anyDimensionFeatureEnabled) {
         dimensionFontSizeSlider.removeAttribute('aria-disabled');
       } else {
         dimensionFontSizeSlider.setAttribute('aria-disabled', 'true');
       }
     }
     if (dimensionFontSizeGroup) {
-      dimensionFontSizeGroup.classList.toggle('is-disabled', !enabled);
+      dimensionFontSizeGroup.classList.toggle(
+        'is-disabled',
+        !anyDimensionFeatureEnabled
+      );
     }
     setCheckboxControlState(
       showDimensionLabelsCheckbox,
       showDimensionLabelsControl,
-      enabled
+      dimensionEnabled
     );
     setCheckboxControlState(
       roundDimensionValuesCheckbox,
       roundDimensionValuesControl,
-      enabled
+      anyDimensionFeatureEnabled
     );
   };
 
@@ -2278,6 +2679,13 @@
     updateDimensionControlsState();
   } else {
     updateDimensionControlsState();
+  }
+
+  if (showCharacterDimensionsCheckbox) {
+    showCharacterDimensionsCheckbox.addEventListener('change', () => {
+      updateDimensionControlsState();
+      refreshPreviewIfReady();
+    });
   }
 
   if (showDimensionLabelsCheckbox) {
