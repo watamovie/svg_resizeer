@@ -1407,20 +1407,24 @@
       Math.min(viewBox.width, viewBox.height) * 0.08,
       8
     );
-    const textOffset = Math.max(fontSize * 0.7, strokeWidth * 6, tickSize * 0.85);
+    const textOffset = Math.max(fontSize * 0.6, strokeWidth * 4);
+    const dimensionPadding = Math.max(tickSize, textOffset);
     const dimOffset = Math.max(marginBase * 0.6, tickSize + fontSize * 0.35);
 
     const baseBottomMargin = includeDimensions
-      ? dimOffset + tickSize + textOffset + fontSize * 1.1
+      ? dimOffset + dimensionPadding
       : marginBase;
     const footerPadding = Math.max(fontSize * 0.4, strokeWidth * 4, 12);
     const footerBlockHeight = shouldIncludeFooterText
       ? footerPadding + footerFontSize * 1.1
       : 0;
     const bottomMargin = Math.max(marginBase, baseBottomMargin + footerBlockHeight);
-    const rightMargin = Math.max(marginBase, dimOffset + tickSize + textOffset + fontSize * 0.9);
+    const dimensionSideMargin = includeDimensions
+      ? Math.max(marginBase, dimOffset + dimensionPadding)
+      : marginBase;
+    const rightMargin = marginBase;
     const topMargin = marginBase;
-    const leftMargin = marginBase;
+    const leftMargin = dimensionSideMargin;
 
     const finalViewBox = {
       minX: viewBox.minX - leftMargin,
@@ -1430,12 +1434,12 @@
     };
 
     const horizontalY = viewBox.minY + viewBox.height + dimOffset;
-    const verticalX = viewBox.minX + viewBox.width + dimOffset;
+    const verticalX = viewBox.minX - dimOffset;
 
-    const horizontalLabelY = horizontalY + textOffset;
-    const verticalLabelX = verticalX + textOffset;
+    const horizontalLabelY = horizontalY;
+    const verticalLabelX = verticalX;
     const dimensionContentBottom = includeDimensions
-      ? horizontalLabelY + fontSize * 1.1
+      ? horizontalY + dimensionPadding
       : viewBox.minY + viewBox.height;
     const footerTextTop = shouldIncludeFooterText
       ? dimensionContentBottom + footerPadding
@@ -1472,12 +1476,12 @@
         <line x1="${verticalX}" y1="${viewBox.minY}" x2="${verticalX}" y2="${viewBox.minY + viewBox.height}" marker-start="url(#${markerIdBase}-start)" marker-end="url(#${markerIdBase}-end)"></line>
         <line x1="${viewBox.minX}" y1="${viewBox.minY}" x2="${viewBox.minX}" y2="${horizontalY}" stroke-dasharray="${strokeWidth * 2}"></line>
         <line x1="${viewBox.minX + viewBox.width}" y1="${viewBox.minY}" x2="${viewBox.minX + viewBox.width}" y2="${horizontalY}" stroke-dasharray="${strokeWidth * 2}"></line>
-        <line x1="${viewBox.minX}" y1="${viewBox.minY}" x2="${verticalX}" y2="${viewBox.minY}" stroke-dasharray="${strokeWidth * 2}"></line>
-        <line x1="${viewBox.minX}" y1="${viewBox.minY + viewBox.height}" x2="${verticalX}" y2="${viewBox.minY + viewBox.height}" stroke-dasharray="${strokeWidth * 2}"></line>
+        <line x1="${verticalX}" y1="${viewBox.minY}" x2="${viewBox.minX}" y2="${viewBox.minY}" stroke-dasharray="${strokeWidth * 2}"></line>
+        <line x1="${verticalX}" y1="${viewBox.minY + viewBox.height}" x2="${viewBox.minX}" y2="${viewBox.minY + viewBox.height}" stroke-dasharray="${strokeWidth * 2}"></line>
         <line x1="${viewBox.minX}" y1="${horizontalY}" x2="${viewBox.minX}" y2="${horizontalY + tickSize}"></line>
         <line x1="${viewBox.minX + viewBox.width}" y1="${horizontalY}" x2="${viewBox.minX + viewBox.width}" y2="${horizontalY + tickSize}"></line>
-        <line x1="${verticalX}" y1="${viewBox.minY}" x2="${verticalX + tickSize}" y2="${viewBox.minY}"></line>
-        <line x1="${verticalX}" y1="${viewBox.minY + viewBox.height}" x2="${verticalX + tickSize}" y2="${viewBox.minY + viewBox.height}"></line>
+        <line x1="${verticalX}" y1="${viewBox.minY}" x2="${verticalX - tickSize}" y2="${viewBox.minY}"></line>
+        <line x1="${verticalX}" y1="${viewBox.minY + viewBox.height}" x2="${verticalX - tickSize}" y2="${viewBox.minY + viewBox.height}"></line>
       </g>`
       : '';
 
@@ -1605,7 +1609,7 @@
     const labels = includeDimensions
       ? `
       <g data-generated-by="dimension-overlay" fill="${dimensionColors.text}" font-size="${fontSize}" font-weight="600" font-family="'Segoe UI', 'Hiragino Sans', 'Yu Gothic', sans-serif">
-        <text x="${viewBox.minX + viewBox.width / 2}" y="${horizontalLabelY}" text-anchor="middle" dominant-baseline="text-before-edge">${widthLabelText}</text>
+        <text x="${viewBox.minX + viewBox.width / 2}" y="${horizontalLabelY}" text-anchor="middle" dominant-baseline="middle">${widthLabelText}</text>
         <text x="${verticalLabelX}" y="${viewBox.minY + viewBox.height / 2}" text-anchor="middle" dominant-baseline="middle" transform="rotate(-90 ${verticalLabelX} ${viewBox.minY + viewBox.height / 2})">${heightLabelText}</text>
       </g>`
       : '';
