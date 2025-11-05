@@ -1407,20 +1407,25 @@
       Math.min(viewBox.width, viewBox.height) * 0.08,
       8
     );
-    const textOffset = Math.max(fontSize * 0.7, strokeWidth * 6, tickSize * 0.85);
+    const textOffset = Math.max(fontSize * 0.45, strokeWidth * 2, 6);
     const dimOffset = Math.max(marginBase * 0.6, tickSize + fontSize * 0.35);
 
     const baseBottomMargin = includeDimensions
-      ? dimOffset + tickSize + textOffset + fontSize * 1.1
+      ? dimOffset + tickSize + fontSize * 0.6
       : marginBase;
     const footerPadding = Math.max(fontSize * 0.4, strokeWidth * 4, 12);
     const footerBlockHeight = shouldIncludeFooterText
       ? footerPadding + footerFontSize * 1.1
       : 0;
     const bottomMargin = Math.max(marginBase, baseBottomMargin + footerBlockHeight);
-    const rightMargin = Math.max(marginBase, dimOffset + tickSize + textOffset + fontSize * 0.9);
+    const rightMargin = marginBase;
     const topMargin = marginBase;
-    const leftMargin = marginBase;
+    const leftMargin = includeDimensions
+      ? Math.max(
+          marginBase,
+          dimOffset + tickSize + textOffset + fontSize * 1.4
+        )
+      : marginBase;
 
     const finalViewBox = {
       minX: viewBox.minX - leftMargin,
@@ -1430,12 +1435,12 @@
     };
 
     const horizontalY = viewBox.minY + viewBox.height + dimOffset;
-    const verticalX = viewBox.minX + viewBox.width + dimOffset;
+    const verticalX = viewBox.minX - dimOffset;
 
-    const horizontalLabelY = horizontalY + textOffset;
-    const verticalLabelX = verticalX + textOffset;
+    const horizontalLabelY = horizontalY - fontSize - textOffset;
+    const verticalLabelX = verticalX - (textOffset + fontSize * 0.5);
     const dimensionContentBottom = includeDimensions
-      ? horizontalLabelY + fontSize * 1.1
+      ? Math.max(horizontalY + tickSize, horizontalLabelY + fontSize)
       : viewBox.minY + viewBox.height;
     const footerTextTop = shouldIncludeFooterText
       ? dimensionContentBottom + footerPadding
@@ -1476,8 +1481,8 @@
         <line x1="${viewBox.minX}" y1="${viewBox.minY + viewBox.height}" x2="${verticalX}" y2="${viewBox.minY + viewBox.height}" stroke-dasharray="${strokeWidth * 2}"></line>
         <line x1="${viewBox.minX}" y1="${horizontalY}" x2="${viewBox.minX}" y2="${horizontalY + tickSize}"></line>
         <line x1="${viewBox.minX + viewBox.width}" y1="${horizontalY}" x2="${viewBox.minX + viewBox.width}" y2="${horizontalY + tickSize}"></line>
-        <line x1="${verticalX}" y1="${viewBox.minY}" x2="${verticalX + tickSize}" y2="${viewBox.minY}"></line>
-        <line x1="${verticalX}" y1="${viewBox.minY + viewBox.height}" x2="${verticalX + tickSize}" y2="${viewBox.minY + viewBox.height}"></line>
+        <line x1="${verticalX}" y1="${viewBox.minY}" x2="${verticalX - tickSize}" y2="${viewBox.minY}"></line>
+        <line x1="${verticalX}" y1="${viewBox.minY + viewBox.height}" x2="${verticalX - tickSize}" y2="${viewBox.minY + viewBox.height}"></line>
       </g>`
       : '';
 
