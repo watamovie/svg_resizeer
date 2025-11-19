@@ -83,6 +83,8 @@
   const downloadPngLink = document.getElementById('downloadPng');
   const shapeRemovalGroup = document.getElementById('shapeRemovalGroup');
   const shapeRemovalList = document.getElementById('shapeRemovalList');
+  const dimensionTargetGroup = document.getElementById('dimensionTargetGroup');
+  const dimensionTargetList = document.getElementById('dimensionTargetList');
   const colorRemovalGroup = document.getElementById('colorRemovalGroup');
   const colorRemovalList = document.getElementById('colorRemovalList');
 
@@ -110,6 +112,7 @@
   let lastSelectedUnit = unitSelect ? unitSelect.value : 'px';
   let measurementContainer = null;
   let selectedShapeKeys = new Set();
+  let selectedDimensionShapeKeys = new Set();
   let selectedRemovalColors = new Set();
   let lastEditedDimension = 'width';
 
@@ -1011,6 +1014,75 @@
     }
   }
 
+  function updateDimensionTargetControls(svgEl = null) {
+    if (!dimensionTargetList) return;
+
+    const shapes = svgEl ? collectRemovableShapes(svgEl) : [];
+    const availableKeys = new Set(shapes.map((shape) => shape.key));
+
+    if (availableKeys.size) {
+      selectedDimensionShapeKeys = new Set(
+        Array.from(selectedDimensionShapeKeys).filter((key) =>
+          availableKeys.has(key)
+        )
+      );
+    } else {
+      selectedDimensionShapeKeys = new Set();
+    }
+
+    dimensionTargetList.innerHTML = '';
+
+    if (!shapes.length) {
+      const message = document.createElement('p');
+      message.className = 'checkbox-list__empty';
+      message.textContent = svgEl
+        ? '寸法線を追加できる図形が見つかりません。'
+        : 'SVGを読み込むと図形がここに表示されます。';
+      dimensionTargetList.appendChild(message);
+      if (dimensionTargetGroup) {
+        setControlGroupState(dimensionTargetGroup, false);
+      }
+      return;
+    }
+
+    const fragment = document.createDocumentFragment();
+
+    shapes.forEach((shape, index) => {
+      const labelEl = document.createElement('label');
+      labelEl.className = 'checkbox checkbox--small';
+
+      const checkbox = document.createElement('input');
+      checkbox.type = 'checkbox';
+      checkbox.dataset.shapeKey = shape.key;
+      checkbox.checked = selectedDimensionShapeKeys.has(shape.key);
+      checkbox.addEventListener('change', (event) => {
+        const target = event.target;
+        if (!target || !target.dataset) return;
+        const { shapeKey } = target.dataset;
+        if (!shapeKey) return;
+        if (target.checked) {
+          selectedDimensionShapeKeys.add(shapeKey);
+        } else {
+          selectedDimensionShapeKeys.delete(shapeKey);
+        }
+        refreshPreviewIfReady();
+      });
+
+      const text = document.createElement('span');
+      text.textContent = formatShapeLabel(shape, index);
+
+      labelEl.appendChild(checkbox);
+      labelEl.appendChild(text);
+      fragment.appendChild(labelEl);
+    });
+
+    dimensionTargetList.appendChild(fragment);
+
+    if (dimensionTargetGroup) {
+      setControlGroupState(dimensionTargetGroup, true);
+    }
+  }
+
   function removeShapesByFillColors(svgEl, colorHexSet) {
     if (!svgEl || !colorHexSet || !colorHexSet.size) return;
 
@@ -1098,6 +1170,80 @@
         shape.element.parentNode.removeChild(shape.element);
       }
     });
+  }
+
+  function getDimensionTargetBounds(svgEl, shapeKeys) {
+    if (!svgEl || !shapeKeys || !shapeKeys.size) return null;
+    const shapes = collectRemovableShapes(svgEl, { includeElements: true });
+    const targets = shapes.filter(
+      (shape) => shapeKeys.has(shape.key) && shape.element
+    );
+    if (!targets.length) {
+      return null;
+    }
+
+    const trackingAttr = 'data-dimension-target-id';
+    const tracked = [];
+    let counter = 0;
+
+    targets.forEach((shape) => {
+      const id = `dimension-target-${counter++}`;
+      shape.element.setAttribute(trackingAttr, id);
+      tracked.push({ id, element: shape.element });
+    });
+
+    const container = ensureMeasurementContainer();
+    const clone = svgEl.cloneNode(true);
+    if (!clone.hasAttribute('xmlns')) {
+      clone.setAttribute('xmlns', 'http://www.w3.org/2000/svg');
+    }
+    container.appendChild(clone);
+
+    const boxes = [];
+    tracked.forEach((item) => {
+      const cloneElement = clone.querySelector(`[${trackingAttr}="${item.id}"]`);
+      const bbox = getSafeBBox(cloneElement);
+      if (bbox) {
+        boxes.push(bbox);
+      }
+    });
+
+    if (clone.parentNode === container) {
+      container.removeChild(clone);
+    }
+
+    tracked.forEach((item) => {
+      if (item.element) {
+        item.element.removeAttribute(trackingAttr);
+      }
+    });
+
+    if (!boxes.length) {
+      return null;
+    }
+
+    const minX = Math.min(...boxes.map((bbox) => bbox.x));
+    const minY = Math.min(...boxes.map((bbox) => bbox.y));
+    const maxX = Math.max(...boxes.map((bbox) => bbox.x + bbox.width));
+    const maxY = Math.max(...boxes.map((bbox) => bbox.y + bbox.height));
+
+    if (
+      !Number.isFinite(minX) ||
+      !Number.isFinite(minY) ||
+      !Number.isFinite(maxX) ||
+      !Number.isFinite(maxY)
+    ) {
+      return null;
+    }
+
+    const width = maxX - minX;
+    const height = maxY - minY;
+
+    if (width <= 0 || height <= 0) {
+      return null;
+    }
+
+    return { minX, minY, width, height };
   }
 
   function parseLength(value) {
@@ -1364,10 +1510,41 @@
       precomputedMetrics = null,
       includeFooterText = false,
       footerText = '',
+      dimensionTargetBounds = null,
     } = options;
     const metrics = precomputedMetrics || getMetrics(svgEl);
     const viewBox = metrics.viewBox;
     const serializer = new XMLSerializer();
+
+    const hasCustomBounds =
+      dimensionTargetBounds &&
+      Number.isFinite(dimensionTargetBounds.minX) &&
+      Number.isFinite(dimensionTargetBounds.minY) &&
+      Number.isFinite(dimensionTargetBounds.width) &&
+      Number.isFinite(dimensionTargetBounds.height) &&
+      dimensionTargetBounds.width > 0 &&
+      dimensionTargetBounds.height > 0;
+
+    const dimensionBounds = hasCustomBounds
+      ? {
+          minX: dimensionTargetBounds.minX,
+          minY: dimensionTargetBounds.minY,
+          width: dimensionTargetBounds.width,
+          height: dimensionTargetBounds.height,
+        }
+      : {
+          minX: viewBox.minX,
+          minY: viewBox.minY,
+          width: viewBox.width,
+          height: viewBox.height,
+        };
+
+    const dimMinX = dimensionBounds.minX;
+    const dimMinY = dimensionBounds.minY;
+    const dimWidth = dimensionBounds.width;
+    const dimHeight = dimensionBounds.height;
+    const dimMaxX = dimMinX + dimWidth;
+    const dimMaxY = dimMinY + dimHeight;
 
     const clone = svgEl.cloneNode(true);
     clone.removeAttribute('width');
@@ -1471,22 +1648,38 @@
     const dimensionLines = includeDimensions
       ? `
       <g data-generated-by="dimension-overlay" fill="none" stroke="${dimensionColors.stroke}" stroke-width="${strokeWidth}" stroke-linecap="round">
-        <line x1="${viewBox.minX}" y1="${horizontalY}" x2="${viewBox.minX + viewBox.width}" y2="${horizontalY}" marker-start="url(#${markerIdBase}-start)" marker-end="url(#${markerIdBase}-end)"></line>
-        <line x1="${verticalX}" y1="${viewBox.minY}" x2="${verticalX}" y2="${viewBox.minY + viewBox.height}" marker-start="url(#${markerIdBase}-start)" marker-end="url(#${markerIdBase}-end)"></line>
-        <line x1="${viewBox.minX}" y1="${viewBox.minY}" x2="${viewBox.minX}" y2="${horizontalY}" stroke-dasharray="${strokeWidth * 2}"></line>
-        <line x1="${viewBox.minX + viewBox.width}" y1="${viewBox.minY}" x2="${viewBox.minX + viewBox.width}" y2="${horizontalY}" stroke-dasharray="${strokeWidth * 2}"></line>
-        <line x1="${viewBox.minX}" y1="${viewBox.minY}" x2="${verticalX}" y2="${viewBox.minY}" stroke-dasharray="${strokeWidth * 2}"></line>
-        <line x1="${viewBox.minX}" y1="${viewBox.minY + viewBox.height}" x2="${verticalX}" y2="${viewBox.minY + viewBox.height}" stroke-dasharray="${strokeWidth * 2}"></line>
-        <line x1="${viewBox.minX}" y1="${horizontalY}" x2="${viewBox.minX}" y2="${horizontalY + tickSize}"></line>
-        <line x1="${viewBox.minX + viewBox.width}" y1="${horizontalY}" x2="${viewBox.minX + viewBox.width}" y2="${horizontalY + tickSize}"></line>
-        <line x1="${verticalX}" y1="${viewBox.minY}" x2="${verticalX - tickSize}" y2="${viewBox.minY}"></line>
-        <line x1="${verticalX}" y1="${viewBox.minY + viewBox.height}" x2="${verticalX - tickSize}" y2="${viewBox.minY + viewBox.height}"></line>
+        <line x1="${dimMinX}" y1="${horizontalY}" x2="${dimMaxX}" y2="${horizontalY}" marker-start="url(#${markerIdBase}-start)" marker-end="url(#${markerIdBase}-end)"></line>
+        <line x1="${verticalX}" y1="${dimMinY}" x2="${verticalX}" y2="${dimMaxY}" marker-start="url(#${markerIdBase}-start)" marker-end="url(#${markerIdBase}-end)"></line>
+        <line x1="${dimMinX}" y1="${dimMinY}" x2="${dimMinX}" y2="${horizontalY}" stroke-dasharray="${strokeWidth * 2}"></line>
+        <line x1="${dimMaxX}" y1="${dimMinY}" x2="${dimMaxX}" y2="${horizontalY}" stroke-dasharray="${strokeWidth * 2}"></line>
+        <line x1="${dimMinX}" y1="${dimMinY}" x2="${verticalX}" y2="${dimMinY}" stroke-dasharray="${strokeWidth * 2}"></line>
+        <line x1="${dimMinX}" y1="${dimMaxY}" x2="${verticalX}" y2="${dimMaxY}" stroke-dasharray="${strokeWidth * 2}"></line>
+        <line x1="${dimMinX}" y1="${horizontalY}" x2="${dimMinX}" y2="${horizontalY + tickSize}"></line>
+        <line x1="${dimMaxX}" y1="${horizontalY}" x2="${dimMaxX}" y2="${horizontalY + tickSize}"></line>
+        <line x1="${verticalX}" y1="${dimMinY}" x2="${verticalX - tickSize}" y2="${dimMinY}"></line>
+        <line x1="${verticalX}" y1="${dimMaxY}" x2="${verticalX - tickSize}" y2="${dimMaxY}"></line>
       </g>`
       : '';
 
     const conversion = getConversion(unit);
-    const displayWidth = conversion.fromPx(targetWidthPx);
-    const displayHeight = conversion.fromPx(targetHeightPx);
+    const widthRatio =
+      Number.isFinite(viewBox.width) && viewBox.width > 0
+        ? targetWidthPx / viewBox.width
+        : 0;
+    const heightRatio =
+      Number.isFinite(viewBox.height) && viewBox.height > 0
+        ? targetHeightPx / viewBox.height
+        : 0;
+    const dimensionWidthPx =
+      widthRatio > 0 && Number.isFinite(dimWidth)
+        ? dimWidth * widthRatio
+        : targetWidthPx;
+    const dimensionHeightPx =
+      heightRatio > 0 && Number.isFinite(dimHeight)
+        ? dimHeight * heightRatio
+        : targetHeightPx;
+    const displayWidth = conversion.fromPx(dimensionWidthPx);
+    const displayHeight = conversion.fromPx(dimensionHeightPx);
     const unitLabel = conversion.label;
     const unitSuffix = conversion.suffix;
     const formattedDisplayWidth = formatDimensionDisplay(displayWidth, {
@@ -1608,8 +1801,8 @@
     const labels = includeDimensions
       ? `
       <g data-generated-by="dimension-overlay" fill="${dimensionColors.text}" font-size="${fontSize}" font-weight="600" font-family="'Segoe UI', 'Hiragino Sans', 'Yu Gothic', sans-serif">
-        <text x="${viewBox.minX + viewBox.width / 2}" y="${horizontalLabelY}" text-anchor="middle" dominant-baseline="text-before-edge">${widthLabelText}</text>
-        <text x="${verticalLabelX}" y="${viewBox.minY + viewBox.height / 2}" text-anchor="middle" dominant-baseline="middle" transform="rotate(-90 ${verticalLabelX} ${viewBox.minY + viewBox.height / 2})">${heightLabelText}</text>
+        <text x="${dimMinX + dimWidth / 2}" y="${horizontalLabelY}" text-anchor="middle" dominant-baseline="text-before-edge">${widthLabelText}</text>
+        <text x="${verticalLabelX}" y="${dimMinY + dimHeight / 2}" text-anchor="middle" dominant-baseline="middle" transform="rotate(-90 ${verticalLabelX} ${dimMinY + dimHeight / 2})">${heightLabelText}</text>
       </g>`
       : '';
 
@@ -1807,6 +2000,11 @@
         }
       }
 
+      const dimensionTargetBounds =
+        selectedDimensionShapeKeys && selectedDimensionShapeKeys.size
+          ? getDimensionTargetBounds(svgEl, selectedDimensionShapeKeys)
+          : null;
+
       const svgString = generateResizedSvg(svgEl, targetWidthPx, targetHeightPx, unit, {
         includeDimensions: showDimensionsCheckbox ? showDimensionsCheckbox.checked : true,
         showDimensionLabels: showDimensionLabelsCheckbox
@@ -1828,6 +2026,7 @@
         precomputedMetrics: metrics,
         includeFooterText: shouldIncludeFooterText,
         footerText: shouldIncludeFooterText ? normalizedFooterTextInput : '',
+        dimensionTargetBounds,
       });
       previewArea.innerHTML = svgString;
       updateDownloads(svgString, targetWidthPx, targetHeightPx, {
@@ -1897,12 +2096,14 @@
           const metrics = getMetrics(svgEl);
           updateDimensionInputs(metrics);
           updateShapeRemovalControls(svgEl);
+          updateDimensionTargetControls(svgEl);
           updateColorRemovalControls(svgEl);
           setMessage('画像ファイルをSVGとして読み込みました。寸法を調整してリサイズしてください。');
           goToStep('resize');
         } catch (error) {
           setMessage(error.message, true);
           updateShapeRemovalControls(null);
+          updateDimensionTargetControls(null);
           updateColorRemovalControls(null);
         }
       };
@@ -1935,11 +2136,13 @@
             const metrics = getMetrics(svgEl);
             updateDimensionInputs(metrics);
             updateShapeRemovalControls(svgEl);
+            updateDimensionTargetControls(svgEl);
             updateColorRemovalControls(svgEl);
             goToStep('resize');
           } catch (error) {
             setMessage(error.message, true);
             updateShapeRemovalControls(null);
+            updateDimensionTargetControls(null);
             updateColorRemovalControls(null);
           }
         }
@@ -2053,6 +2256,7 @@
   };
 
   updateShapeRemovalControls(null);
+  updateDimensionTargetControls(null);
   updateColorRemovalControls(null);
 
   if (dimensionFontSizeSlider) {
@@ -2357,6 +2561,7 @@
     if (!text) {
       setMessage('');
       updateShapeRemovalControls(null);
+      updateDimensionTargetControls(null);
       updateColorRemovalControls(null);
       return;
     }
@@ -2365,6 +2570,7 @@
       const metrics = getMetrics(svgEl);
       updateDimensionInputs(metrics);
       updateShapeRemovalControls(svgEl);
+      updateDimensionTargetControls(svgEl);
       updateColorRemovalControls(svgEl);
       setMessage('SVGを解析しました。寸法を調整してリサイズしてください。');
       if (activeStepId === 'input') {
@@ -2373,6 +2579,7 @@
     } catch (error) {
       setMessage(error.message, true);
       updateShapeRemovalControls(null);
+      updateDimensionTargetControls(null);
       updateColorRemovalControls(null);
     }
   });
