@@ -286,6 +286,12 @@ textarea:focus {
   font-size: 0.95rem;
 }
 
+.control-group__description {
+  margin: 0;
+  font-size: 0.85rem;
+  color: var(--muted);
+}
+
 .checkbox-list {
   display: flex;
   flex-direction: column;

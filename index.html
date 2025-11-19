@@ -109,6 +109,21 @@
                     <input type="checkbox" id="showDimensions" checked />
                     寸法線を表示
                   </label>
+                  <div class="control-group control-group--full" id="dimensionTargetGroup">
+                    <span class="control-group__label">寸法線を付ける図形を選択</span>
+                    <p class="control-group__description">
+                      未選択の場合は全体の寸法線を表示します。図形を選択すると、その図形を囲う寸法線に切り替わります。
+                    </p>
+                    <div
+                      id="dimensionTargetList"
+                      class="checkbox-list"
+                      role="group"
+                      aria-live="polite"
+                      aria-label="寸法線を表示する図形"
+                    >
+                      <p class="checkbox-list__empty">SVGを読み込むと図形がここに表示されます。</p>
+                    </div>
+                  </div>
                   <label class="checkbox">
                     <input type="checkbox" id="showDimensionLabels" />
                     寸法ラベル（「幅」「高さ」）を表示
