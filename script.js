@@ -83,6 +83,8 @@
   const downloadPngLink = document.getElementById('downloadPng');
   const shapeRemovalGroup = document.getElementById('shapeRemovalGroup');
   const shapeRemovalList = document.getElementById('shapeRemovalList');
+  const dimensionTargetGroup = document.getElementById('dimensionTargetGroup');
+  const dimensionTargetList = document.getElementById('dimensionTargetList');
   const colorRemovalGroup = document.getElementById('colorRemovalGroup');
   const colorRemovalList = document.getElementById('colorRemovalList');
 
@@ -110,6 +112,7 @@
   let lastSelectedUnit = unitSelect ? unitSelect.value : 'px';
   let measurementContainer = null;
   let selectedShapeKeys = new Set();
+  let selectedDimensionShapeKeys = new Set();
   let selectedRemovalColors = new Set();
   let lastEditedDimension = 'width';
 
@@ -1011,6 +1014,75 @@
     }
   }
 
+  function updateDimensionTargetControls(svgEl = null) {
+    if (!dimensionTargetList) return;
+
+    const shapes = svgEl ? collectRemovableShapes(svgEl) : [];
+    const availableKeys = new Set(shapes.map((shape) => shape.key));
+
+    if (availableKeys.size) {
+      selectedDimensionShapeKeys = new Set(
+        Array.from(selectedDimensionShapeKeys).filter((key) =>
+          availableKeys.has(key)
+        )
+      );
+    } else {
+      selectedDimensionShapeKeys = new Set();
+    }
+
+    dimensionTargetList.innerHTML = '';
+
+    if (!shapes.length) {
+      const message = document.createElement('p');
+      message.className = 'checkbox-list__empty';
+      message.textContent = svgEl
+        ? '寸法線を追加できる図形が見つかりません。'
+        : 'SVGを読み込むと図形がここに表示されます。';
+      dimensionTargetList.appendChild(message);
+      if (dimensionTargetGroup) {
+        setControlGroupState(dimensionTargetGroup, false);
+      }
+      return;
+    }
+
+    const fragment = document.createDocumentFragment();
+
+    shapes.forEach((shape, index) => {
+      const labelEl = document.createElement('label');
+      labelEl.className = 'checkbox checkbox--small';
+
+      const checkbox = document.createElement('input');
+      checkbox.type = 'checkbox';
+      checkbox.dataset.shapeKey = shape.key;
+      checkbox.checked = selectedDimensionShapeKeys.has(shape.key);
+      checkbox.addEventListener('change', (event) => {
+        const target = event.target;
+        if (!target || !target.dataset) return;
+        const { shapeKey } = target.dataset;
+        if (!shapeKey) return;
+        if (target.checked) {
+          selectedDimensionShapeKeys.add(shapeKey);
+        } else {
+          selectedDimensionShapeKeys.delete(shapeKey);
+        }
+        refreshPreviewIfReady();
+      });
+
+      const text = document.createElement('span');
+      text.textContent = formatShapeLabel(shape, index);
+
+      labelEl.appendChild(checkbox);
+      labelEl.appendChild(text);
+      fragment.appendChild(labelEl);
+    });
+
+    dimensionTargetList.appendChild(fragment);
+
+    if (dimensionTargetGroup) {
+      setControlGroupState(dimensionTargetGroup, true);
+    }
+  }
+
   function removeShapesByFillColors(svgEl, colorHexSet) {
     if (!svgEl || !colorHexSet || !colorHexSet.size) return;
 
@@ -1098,6 +1170,78 @@
         shape.element.parentNode.removeChild(shape.element);
       }
     });
+  }
+
+  function getSelectedPartDimensions(svgEl, shapeKeys, options = {}) {
+    if (!svgEl || !shapeKeys || !shapeKeys.size) return [];
+    const { shapesWithElements = [] } = options;
+
+    const shapes =
+      Array.isArray(shapesWithElements) && shapesWithElements.length
+        ? shapesWithElements
+        : collectRemovableShapes(svgEl, { includeElements: true });
+
+    if (!shapes.length) return [];
+
+    const shapeMap = new Map();
+    shapes.forEach((shape, index) => {
+      shapeMap.set(shape.key, { ...shape, orderIndex: index });
+    });
+
+    const targets = Array.from(shapeKeys)
+      .map((key) => shapeMap.get(key))
+      .filter((entry) => entry && entry.element);
+
+    if (!targets.length) return [];
+
+    const container = ensureMeasurementContainer();
+    let appended = false;
+
+    try {
+      container.appendChild(svgEl);
+      appended = true;
+
+      return targets
+        .map((shape) => {
+          if (!shape.element || typeof shape.element.getBBox !== 'function') {
+            return null;
+          }
+          let bbox = null;
+          try {
+            bbox = shape.element.getBBox();
+          } catch {
+            bbox = null;
+          }
+
+          if (
+            !bbox ||
+            !Number.isFinite(bbox.x) ||
+            !Number.isFinite(bbox.y) ||
+            !Number.isFinite(bbox.width) ||
+            !Number.isFinite(bbox.height) ||
+            bbox.width <= 0 ||
+            bbox.height <= 0
+          ) {
+            return null;
+          }
+
+          return {
+            key: shape.key,
+            label: formatShapeLabel(shape, shape.orderIndex || 0),
+            bbox: {
+              minX: bbox.x,
+              minY: bbox.y,
+              width: bbox.width,
+              height: bbox.height,
+            },
+          };
+        })
+        .filter(Boolean);
+    } finally {
+      if (appended && svgEl.parentNode === container) {
+        container.removeChild(svgEl);
+      }
+    }
   }
 
   function parseLength(value) {
@@ -1364,6 +1508,7 @@
       precomputedMetrics = null,
       includeFooterText = false,
       footerText = '',
+      partDimensions = [],
     } = options;
     const metrics = precomputedMetrics || getMetrics(svgEl);
     const viewBox = metrics.viewBox;
@@ -1468,22 +1613,6 @@
       </defs>`
       : '';
 
-    const dimensionLines = includeDimensions
-      ? `
-      <g data-generated-by="dimension-overlay" fill="none" stroke="${dimensionColors.stroke}" stroke-width="${strokeWidth}" stroke-linecap="round">
-        <line x1="${viewBox.minX}" y1="${horizontalY}" x2="${viewBox.minX + viewBox.width}" y2="${horizontalY}" marker-start="url(#${markerIdBase}-start)" marker-end="url(#${markerIdBase}-end)"></line>
-        <line x1="${verticalX}" y1="${viewBox.minY}" x2="${verticalX}" y2="${viewBox.minY + viewBox.height}" marker-start="url(#${markerIdBase}-start)" marker-end="url(#${markerIdBase}-end)"></line>
-        <line x1="${viewBox.minX}" y1="${viewBox.minY}" x2="${viewBox.minX}" y2="${horizontalY}" stroke-dasharray="${strokeWidth * 2}"></line>
-        <line x1="${viewBox.minX + viewBox.width}" y1="${viewBox.minY}" x2="${viewBox.minX + viewBox.width}" y2="${horizontalY}" stroke-dasharray="${strokeWidth * 2}"></line>
-        <line x1="${viewBox.minX}" y1="${viewBox.minY}" x2="${verticalX}" y2="${viewBox.minY}" stroke-dasharray="${strokeWidth * 2}"></line>
-        <line x1="${viewBox.minX}" y1="${viewBox.minY + viewBox.height}" x2="${verticalX}" y2="${viewBox.minY + viewBox.height}" stroke-dasharray="${strokeWidth * 2}"></line>
-        <line x1="${viewBox.minX}" y1="${horizontalY}" x2="${viewBox.minX}" y2="${horizontalY + tickSize}"></line>
-        <line x1="${viewBox.minX + viewBox.width}" y1="${horizontalY}" x2="${viewBox.minX + viewBox.width}" y2="${horizontalY + tickSize}"></line>
-        <line x1="${verticalX}" y1="${viewBox.minY}" x2="${verticalX - tickSize}" y2="${viewBox.minY}"></line>
-        <line x1="${verticalX}" y1="${viewBox.minY + viewBox.height}" x2="${verticalX - tickSize}" y2="${viewBox.minY + viewBox.height}"></line>
-      </g>`
-      : '';
-
     const conversion = getConversion(unit);
     const displayWidth = conversion.fromPx(targetWidthPx);
     const displayHeight = conversion.fromPx(targetHeightPx);
@@ -1513,99 +1642,121 @@
         : '高さ'
       : heightValueText;
 
-    let drillHolesGroup = '';
-    if (
-      showDrillHoles &&
-      Number.isFinite(targetWidthPx) &&
-      Number.isFinite(targetHeightPx) &&
-      targetWidthPx > 0 &&
-      targetHeightPx > 0 &&
-      Number.isFinite(viewBox.width) &&
-      Number.isFinite(viewBox.height) &&
-      viewBox.width > 0 &&
-      viewBox.height > 0
-    ) {
-      const offsetMmValue =
-        Number.isFinite(drillHoleOffsetMm) && drillHoleOffsetMm >= 0
-          ? drillHoleOffsetMm
-          : 20;
-      const diameterMmValue =
-        Number.isFinite(drillHoleDiameterMm) && drillHoleDiameterMm > 0
-          ? drillHoleDiameterMm
-          : 10;
-      const offsetPx = offsetMmValue * MM_TO_PX;
-      const radiusPx = (diameterMmValue / 2) * MM_TO_PX;
+    const dimensionLines = includeDimensions
+      ? `
+      <g data-generated-by="dimension-overlay" fill="none" stroke="${dimensionColors.stroke}" stroke-width="${strokeWidth}" stroke-linecap="round">
+        <line x1="${viewBox.minX}" y1="${horizontalY}" x2="${viewBox.minX + viewBox.width}" y2="${horizontalY}" marker-start="url(#${markerIdBase}-start)" marker-end="url(#${markerIdBase}-end)"></line>
+        <line x1="${verticalX}" y1="${viewBox.minY}" x2="${verticalX}" y2="${viewBox.minY + viewBox.height}" marker-start="url(#${markerIdBase}-start)" marker-end="url(#${markerIdBase}-end)"></line>
+        <line x1="${viewBox.minX}" y1="${viewBox.minY}" x2="${viewBox.minX}" y2="${horizontalY}" stroke-dasharray="${strokeWidth * 2}"></line>
+        <line x1="${viewBox.minX + viewBox.width}" y1="${viewBox.minY}" x2="${viewBox.minX + viewBox.width}" y2="${horizontalY}" stroke-dasharray="${strokeWidth * 2}"></line>
+        <line x1="${viewBox.minX}" y1="${viewBox.minY}" x2="${verticalX}" y2="${viewBox.minY}" stroke-dasharray="${strokeWidth * 2}"></line>
+        <line x1="${viewBox.minX}" y1="${viewBox.minY + viewBox.height}" x2="${verticalX}" y2="${viewBox.minY + viewBox.height}" stroke-dasharray="${strokeWidth * 2}"></line>
+        <line x1="${viewBox.minX}" y1="${horizontalY}" x2="${viewBox.minX}" y2="${horizontalY + tickSize}"></line>
+        <line x1="${viewBox.minX + viewBox.width}" y1="${horizontalY}" x2="${viewBox.minX + viewBox.width}" y2="${horizontalY + tickSize}"></line>
+        <line x1="${verticalX}" y1="${viewBox.minY}" x2="${verticalX - tickSize}" y2="${viewBox.minY}"></line>
+        <line x1="${verticalX}" y1="${viewBox.minY + viewBox.height}" x2="${verticalX - tickSize}" y2="${viewBox.minY + viewBox.height}"></line>
+      </g>`
+      : '';
 
-      const pxToViewBoxX = (px) => (px * finalViewBox.width) / targetWidthPx;
-      const pxToViewBoxY = (px) => (px * finalViewBox.height) / targetHeightPx;
+    const partDimensionLines =
+      includeDimensions && Array.isArray(partDimensions) && partDimensions.length
+        ? partDimensions
+            .map((entry, index) => {
+              if (!entry || !entry.bbox) return '';
+              const { bbox } = entry;
+              if (
+                !Number.isFinite(bbox.minX) ||
+                !Number.isFinite(bbox.minY) ||
+                !Number.isFinite(bbox.width) ||
+                !Number.isFinite(bbox.height) ||
+                bbox.width <= 0 ||
+                bbox.height <= 0
+              ) {
+                return '';
+              }
 
-      const offsetX = pxToViewBoxX(offsetPx);
-      const offsetY = pxToViewBoxY(offsetPx);
-      const radiusX = pxToViewBoxX(radiusPx);
-      const radiusY = pxToViewBoxY(radiusPx);
-      let radius = Math.min(radiusX, radiusY);
+              const maxOffsetAllowance = Math.max(
+                leftMargin * 0.85,
+                marginBase * 0.7,
+                tickSize
+              );
+              const partOffset = clamp(
+                Math.max(
+                  Math.max(bbox.width, bbox.height) * 0.08,
+                  strokeWidth * 4,
+                  tickSize * 0.8
+                ),
+                strokeWidth * 3,
+                maxOffsetAllowance || strokeWidth * 8
+              );
+              const partTick = Math.max(tickSize * 0.6, strokeWidth * 2.5);
+              const partLabelGap = Math.max(labelGap * 0.6, strokeWidth * 3);
 
-      const maxRadius = Math.min(viewBox.width / 2, viewBox.height / 2);
+              const horizontalPartY = bbox.minY - partOffset;
+              const verticalPartX = bbox.minX - partOffset;
+              const bboxMaxX = bbox.minX + bbox.width;
+              const bboxMaxY = bbox.minY + bbox.height;
+              const labelY = horizontalPartY - partLabelGap;
+              const centerX = bbox.minX + bbox.width / 2;
 
-      if (
-        !Number.isFinite(radius) ||
-        radius <= 0 ||
-        !Number.isFinite(maxRadius) ||
-        maxRadius <= 0
-      ) {
-        radius = 0;
-      } else if (radius > maxRadius) {
-        radius = maxRadius;
-      }
+              const partApproxPrefix = roundDimensionDisplay ? '約' : '';
+              const widthText = formatDimensionDisplay(
+                conversion.fromPx(bbox.width),
+                {
+                  round: roundDimensionDisplay,
+                }
+              );
+              const heightText = formatDimensionDisplay(
+                conversion.fromPx(bbox.height),
+                {
+                  round: roundDimensionDisplay,
+                }
+              );
 
-      if (radius > 0) {
-        const maxOffsetX = Math.max(viewBox.width - radius, radius);
-        const maxOffsetY = Math.max(viewBox.height - radius, radius);
-        const safeOffsetX = clamp(offsetX, radius, maxOffsetX);
-        const safeOffsetY = clamp(offsetY, radius, maxOffsetY);
+              const widthLabel = widthText
+                ? `${partApproxPrefix}${widthText}${unitLabel}`
+                : '';
+              const heightLabel = heightText
+                ? `${partApproxPrefix}${heightText}${unitLabel}`
+                : '';
 
-        const uniquePositions = (values) => {
-          const result = [];
-          values.forEach((value) => {
-            if (!Number.isFinite(value)) return;
-            const exists = result.some(
-              (existing) => Math.abs(existing - value) < 1e-3
-            );
-            if (!exists) {
-              result.push(value);
-            }
-          });
-          return result;
-        };
+              const combinedSizeText = widthLabel && heightLabel
+                ? `${widthLabel} × ${heightLabel}`
+                : widthLabel || heightLabel;
 
-        const xPositions = uniquePositions([
-          viewBox.minX + safeOffsetX,
-          viewBox.minX + viewBox.width - safeOffsetX,
-        ]);
-        const yPositions = uniquePositions([
-          viewBox.minY + safeOffsetY,
-          viewBox.minY + viewBox.height - safeOffsetY,
-        ]);
+              const dimensionLabel = entry.label
+                ? entry.label
+                : `パーツ${index + 1}`;
+              const summaryText = [dimensionLabel, combinedSizeText]
+                .filter((value) => value && value.length > 0)
+                .join('：');
 
-        const holeElements = [];
-        xPositions.forEach((cx) => {
-          yPositions.forEach((cy) => {
-            holeElements.push(
-              `<circle cx="${cx}" cy="${cy}" r="${radius}"></circle>`
-            );
-          });
-        });
+              const dataKey = entry.key
+                ? escapeXml(entry.key)
+                : `part-${index + 1}`;
 
-        if (holeElements.length) {
-          drillHolesGroup = `
-      <g data-generated-by="drill-hole-overlay" fill="${drillHoleFillColor}" stroke="${dimensionColors.stroke}" stroke-width="${strokeWidth}">
-        ${holeElements.join('\n        ')}
+              return `
+      <g data-generated-by="dimension-overlay" data-dimension-target="${dataKey}" fill="none" stroke="${dimensionColors.stroke}" stroke-width="${strokeWidth}" stroke-linecap="round">
+        <line x1="${bbox.minX}" y1="${horizontalPartY}" x2="${bboxMaxX}" y2="${horizontalPartY}" marker-start="url(#${markerIdBase}-start)" marker-end="url(#${markerIdBase}-end)"></line>
+        <line x1="${verticalPartX}" y1="${bbox.minY}" x2="${verticalPartX}" y2="${bboxMaxY}" marker-start="url(#${markerIdBase}-start)" marker-end="url(#${markerIdBase}-end)"></line>
+        <line x1="${bbox.minX}" y1="${bbox.minY}" x2="${bbox.minX}" y2="${horizontalPartY}" stroke-dasharray="${strokeWidth * 2}"></line>
+        <line x1="${bboxMaxX}" y1="${bbox.minY}" x2="${bboxMaxX}" y2="${horizontalPartY}" stroke-dasharray="${strokeWidth * 2}"></line>
+        <line x1="${bbox.minX}" y1="${bbox.minY}" x2="${verticalPartX}" y2="${bbox.minY}" stroke-dasharray="${strokeWidth * 2}"></line>
+        <line x1="${bbox.minX}" y1="${bboxMaxY}" x2="${verticalPartX}" y2="${bboxMaxY}" stroke-dasharray="${strokeWidth * 2}"></line>
+        <line x1="${bbox.minX}" y1="${horizontalPartY}" x2="${bbox.minX}" y2="${horizontalPartY - partTick}"></line>
+        <line x1="${bboxMaxX}" y1="${horizontalPartY}" x2="${bboxMaxX}" y2="${horizontalPartY - partTick}"></line>
+        <line x1="${verticalPartX}" y1="${bbox.minY}" x2="${verticalPartX - partTick}" y2="${bbox.minY}"></line>
+        <line x1="${verticalPartX}" y1="${bboxMaxY}" x2="${verticalPartX - partTick}" y2="${bboxMaxY}"></line>
+        ${summaryText
+          ? `<text x="${centerX}" y="${labelY}" fill="${dimensionColors.text}" font-size="${fontSize}" font-weight="600" font-family="'Segoe UI', 'Hiragino Sans', 'Yu Gothic', sans-serif" text-anchor="middle" dominant-baseline="auto">${escapeXml(summaryText)}</text>`
+          : ''}
       </g>`;
-        }
-      }
-    }
+            })
+            .filter(Boolean)
+            .join('\n        ')
+        : '';
 
-    const labels = includeDimensions
+        const labels = includeDimensions
       ? `
       <g data-generated-by="dimension-overlay" fill="${dimensionColors.text}" font-size="${fontSize}" font-weight="600" font-family="'Segoe UI', 'Hiragino Sans', 'Yu Gothic', sans-serif">
         <text x="${viewBox.minX + viewBox.width / 2}" y="${horizontalLabelY}" text-anchor="middle" dominant-baseline="text-before-edge">${widthLabelText}</text>
@@ -1634,6 +1785,7 @@
         </g>
         ${drillHolesGroup}
         ${dimensionLines}
+        ${partDimensionLines}
         ${labels}
         ${footerTextElement}
       </svg>
@@ -1740,6 +1892,11 @@
         ? sanitizeFilename(customFilenameRaw)
         : '';
     const effectiveFilenameBase = sanitizedFilenameBase || DEFAULT_FILENAME_BASE;
+    const shouldShowDimensions = showDimensionsCheckbox
+      ? showDimensionsCheckbox.checked
+      : true;
+    let dimensionSourceShapes = [];
+    let partDimensions = [];
 
     try {
       const svgEl = parseSvg(svgText);
@@ -1753,6 +1910,11 @@
       if (shouldRemoveLargestShape) {
         removalInfo = removeLargestShape(svgEl) || { removed: false, fill: null };
       }
+      if (selectedDimensionShapeKeys && selectedDimensionShapeKeys.size) {
+        dimensionSourceShapes = collectRemovableShapes(svgEl, {
+          includeElements: true,
+        });
+      }
       if (shouldOverrideFillColor && overrideFillColorValue) {
         const skipFillColors = [];
         if (removalInfo && removalInfo.removed && removalInfo.fill) {
@@ -1765,6 +1927,15 @@
       }
       if (shouldRemoveAllStrokes) {
         removeAllStrokes(svgEl);
+      }
+      if (shouldShowDimensions && selectedDimensionShapeKeys && selectedDimensionShapeKeys.size) {
+        partDimensions = getSelectedPartDimensions(
+          svgEl,
+          selectedDimensionShapeKeys,
+          {
+            shapesWithElements: dimensionSourceShapes,
+          }
+        );
       }
       const metrics = getMetrics(svgEl);
       let contentRatio = null;
@@ -1808,7 +1979,7 @@
       }
 
       const svgString = generateResizedSvg(svgEl, targetWidthPx, targetHeightPx, unit, {
-        includeDimensions: showDimensionsCheckbox ? showDimensionsCheckbox.checked : true,
+        includeDimensions: shouldShowDimensions,
         showDimensionLabels: showDimensionLabelsCheckbox
           ? showDimensionLabelsCheckbox.checked
           : true,
@@ -1828,6 +1999,7 @@
         precomputedMetrics: metrics,
         includeFooterText: shouldIncludeFooterText,
         footerText: shouldIncludeFooterText ? normalizedFooterTextInput : '',
+        partDimensions,
       });
       previewArea.innerHTML = svgString;
       updateDownloads(svgString, targetWidthPx, targetHeightPx, {
@@ -1897,12 +2069,14 @@
           const metrics = getMetrics(svgEl);
           updateDimensionInputs(metrics);
           updateShapeRemovalControls(svgEl);
+          updateDimensionTargetControls(svgEl);
           updateColorRemovalControls(svgEl);
           setMessage('画像ファイルをSVGとして読み込みました。寸法を調整してリサイズしてください。');
           goToStep('resize');
         } catch (error) {
           setMessage(error.message, true);
           updateShapeRemovalControls(null);
+          updateDimensionTargetControls(null);
           updateColorRemovalControls(null);
         }
       };
@@ -1935,11 +2109,13 @@
             const metrics = getMetrics(svgEl);
             updateDimensionInputs(metrics);
             updateShapeRemovalControls(svgEl);
+            updateDimensionTargetControls(svgEl);
             updateColorRemovalControls(svgEl);
             goToStep('resize');
           } catch (error) {
             setMessage(error.message, true);
             updateShapeRemovalControls(null);
+            updateDimensionTargetControls(null);
             updateColorRemovalControls(null);
           }
         }
@@ -2053,6 +2229,7 @@
   };
 
   updateShapeRemovalControls(null);
+  updateDimensionTargetControls(null);
   updateColorRemovalControls(null);
 
   if (dimensionFontSizeSlider) {
@@ -2086,6 +2263,7 @@
       roundDimensionValuesControl,
       enabled
     );
+    setControlGroupState(dimensionTargetGroup, enabled);
   };
 
   const updateDrillHoleControlsState = () => {
@@ -2357,6 +2535,7 @@
     if (!text) {
       setMessage('');
       updateShapeRemovalControls(null);
+      updateDimensionTargetControls(null);
       updateColorRemovalControls(null);
       return;
     }
@@ -2365,6 +2544,7 @@
       const metrics = getMetrics(svgEl);
       updateDimensionInputs(metrics);
       updateShapeRemovalControls(svgEl);
+      updateDimensionTargetControls(svgEl);
       updateColorRemovalControls(svgEl);
       setMessage('SVGを解析しました。寸法を調整してリサイズしてください。');
       if (activeStepId === 'input') {
@@ -2373,6 +2553,7 @@
     } catch (error) {
       setMessage(error.message, true);
       updateShapeRemovalControls(null);
+      updateDimensionTargetControls(null);
       updateColorRemovalControls(null);
     }
   });
