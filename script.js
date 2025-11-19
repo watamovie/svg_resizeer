@@ -85,6 +85,8 @@
   const shapeRemovalList = document.getElementById('shapeRemovalList');
   const colorRemovalGroup = document.getElementById('colorRemovalGroup');
   const colorRemovalList = document.getElementById('colorRemovalList');
+  const dimensionTargetGroup = document.getElementById('dimensionTargetGroup');
+  const dimensionTargetList = document.getElementById('dimensionTargetList');
 
   const unitConversions = {
     px: {
@@ -110,6 +112,7 @@
   let lastSelectedUnit = unitSelect ? unitSelect.value : 'px';
   let measurementContainer = null;
   let selectedShapeKeys = new Set();
+  let dimensionTargetShapeKeys = new Set();
   let selectedRemovalColors = new Set();
   let lastEditedDimension = 'width';
 
@@ -859,6 +862,49 @@
     return label;
   }
 
+  function getBoundsForShapeKeys(svgEl, shapeKeys) {
+    if (!svgEl || !shapeKeys || !shapeKeys.size) return null;
+    const shapes = collectRemovableShapes(svgEl, { includeElements: true });
+    if (!shapes.length) return null;
+
+    let minX = Infinity;
+    let minY = Infinity;
+    let maxX = -Infinity;
+    let maxY = -Infinity;
+    let found = false;
+
+    shapes.forEach((shape) => {
+      if (!shape || !shape.element || !shapeKeys.has(shape.key)) return;
+      try {
+        const bbox = shape.element.getBBox();
+        if (
+          bbox &&
+          Number.isFinite(bbox.x) &&
+          Number.isFinite(bbox.y) &&
+          Number.isFinite(bbox.width) &&
+          Number.isFinite(bbox.height)
+        ) {
+          minX = Math.min(minX, bbox.x);
+          minY = Math.min(minY, bbox.y);
+          maxX = Math.max(maxX, bbox.x + bbox.width);
+          maxY = Math.max(maxY, bbox.y + bbox.height);
+          found = true;
+        }
+      } catch (error) {
+        console.warn('寸法線対象の図形境界を取得できませんでした:', error);
+      }
+    });
+
+    if (!found) return null;
+
+    return {
+      minX,
+      minY,
+      width: Math.max(maxX - minX, 0),
+      height: Math.max(maxY - minY, 0),
+    };
+  }
+
   function updateColorRemovalControls(svgEl = null) {
     if (!colorRemovalList) return;
 
@@ -1008,6 +1054,75 @@
 
     if (shapeRemovalGroup) {
       setControlGroupState(shapeRemovalGroup, true);
+    }
+  }
+
+  function updateDimensionTargetControls(svgEl = null) {
+    if (!dimensionTargetList) return;
+
+    const shapes = svgEl ? collectRemovableShapes(svgEl) : [];
+    const availableKeys = new Set(shapes.map((shape) => shape.key));
+
+    if (availableKeys.size) {
+      dimensionTargetShapeKeys = new Set(
+        Array.from(dimensionTargetShapeKeys).filter((key) =>
+          availableKeys.has(key)
+        )
+      );
+    } else {
+      dimensionTargetShapeKeys = new Set();
+    }
+
+    dimensionTargetList.innerHTML = '';
+
+    if (!shapes.length) {
+      const message = document.createElement('p');
+      message.className = 'checkbox-list__empty';
+      message.textContent = svgEl
+        ? '選択可能な図形が見つかりません。'
+        : 'SVGを読み込むと図形がここに表示されます。';
+      dimensionTargetList.appendChild(message);
+      if (dimensionTargetGroup) {
+        setControlGroupState(dimensionTargetGroup, false);
+      }
+      return;
+    }
+
+    const fragment = document.createDocumentFragment();
+
+    shapes.forEach((shape, index) => {
+      const labelEl = document.createElement('label');
+      labelEl.className = 'checkbox checkbox--small';
+
+      const checkbox = document.createElement('input');
+      checkbox.type = 'checkbox';
+      checkbox.dataset.shapeKey = shape.key;
+      checkbox.checked = dimensionTargetShapeKeys.has(shape.key);
+      checkbox.addEventListener('change', (event) => {
+        const target = event.target;
+        if (!target || !target.dataset) return;
+        const { shapeKey } = target.dataset;
+        if (!shapeKey) return;
+        if (target.checked) {
+          dimensionTargetShapeKeys.add(shapeKey);
+        } else {
+          dimensionTargetShapeKeys.delete(shapeKey);
+        }
+        refreshPreviewIfReady();
+      });
+
+      const text = document.createElement('span');
+      text.textContent = formatShapeLabel(shape, index);
+
+      labelEl.appendChild(checkbox);
+      labelEl.appendChild(text);
+      fragment.appendChild(labelEl);
+    });
+
+    dimensionTargetList.appendChild(fragment);
+
+    if (dimensionTargetGroup) {
+      setControlGroupState(dimensionTargetGroup, true);
     }
   }
 
@@ -1364,10 +1479,19 @@
       precomputedMetrics = null,
       includeFooterText = false,
       footerText = '',
+      dimensionBoundsOverride = null,
     } = options;
     const metrics = precomputedMetrics || getMetrics(svgEl);
     const viewBox = metrics.viewBox;
     const serializer = new XMLSerializer();
+
+    const hasValidOverride =
+      dimensionBoundsOverride &&
+      Number.isFinite(dimensionBoundsOverride.minX) &&
+      Number.isFinite(dimensionBoundsOverride.minY) &&
+      Number.isFinite(dimensionBoundsOverride.width) &&
+      Number.isFinite(dimensionBoundsOverride.height);
+    const dimensionBox = hasValidOverride ? dimensionBoundsOverride : viewBox;
 
     const clone = svgEl.cloneNode(true);
     clone.removeAttribute('width');
@@ -1432,13 +1556,17 @@
       height: viewBox.height + topMargin + bottomMargin,
     };
 
-    const horizontalY = viewBox.minY + viewBox.height + dimOffset;
-    const verticalX = viewBox.minX - dimOffset;
+    const horizontalY = dimensionBox.minY + dimensionBox.height + dimOffset;
+    const verticalX = dimensionBox.minX - dimOffset;
 
     const horizontalLabelY = horizontalY - (labelGap + fontSize);
     const verticalLabelX = verticalX - (labelGap + fontSize * 0.6);
     const dimensionContentBottom = includeDimensions
-      ? Math.max(horizontalY + tickSize, horizontalLabelY + fontSize * 1.1)
+      ? Math.max(
+          viewBox.minY + viewBox.height,
+          horizontalY + tickSize,
+          horizontalLabelY + fontSize * 1.1
+        )
       : viewBox.minY + viewBox.height;
     const footerTextTop = shouldIncludeFooterText
       ? dimensionContentBottom + footerPadding
@@ -1471,22 +1599,36 @@
     const dimensionLines = includeDimensions
       ? `
       <g data-generated-by="dimension-overlay" fill="none" stroke="${dimensionColors.stroke}" stroke-width="${strokeWidth}" stroke-linecap="round">
-        <line x1="${viewBox.minX}" y1="${horizontalY}" x2="${viewBox.minX + viewBox.width}" y2="${horizontalY}" marker-start="url(#${markerIdBase}-start)" marker-end="url(#${markerIdBase}-end)"></line>
-        <line x1="${verticalX}" y1="${viewBox.minY}" x2="${verticalX}" y2="${viewBox.minY + viewBox.height}" marker-start="url(#${markerIdBase}-start)" marker-end="url(#${markerIdBase}-end)"></line>
-        <line x1="${viewBox.minX}" y1="${viewBox.minY}" x2="${viewBox.minX}" y2="${horizontalY}" stroke-dasharray="${strokeWidth * 2}"></line>
-        <line x1="${viewBox.minX + viewBox.width}" y1="${viewBox.minY}" x2="${viewBox.minX + viewBox.width}" y2="${horizontalY}" stroke-dasharray="${strokeWidth * 2}"></line>
-        <line x1="${viewBox.minX}" y1="${viewBox.minY}" x2="${verticalX}" y2="${viewBox.minY}" stroke-dasharray="${strokeWidth * 2}"></line>
-        <line x1="${viewBox.minX}" y1="${viewBox.minY + viewBox.height}" x2="${verticalX}" y2="${viewBox.minY + viewBox.height}" stroke-dasharray="${strokeWidth * 2}"></line>
-        <line x1="${viewBox.minX}" y1="${horizontalY}" x2="${viewBox.minX}" y2="${horizontalY + tickSize}"></line>
-        <line x1="${viewBox.minX + viewBox.width}" y1="${horizontalY}" x2="${viewBox.minX + viewBox.width}" y2="${horizontalY + tickSize}"></line>
-        <line x1="${verticalX}" y1="${viewBox.minY}" x2="${verticalX - tickSize}" y2="${viewBox.minY}"></line>
-        <line x1="${verticalX}" y1="${viewBox.minY + viewBox.height}" x2="${verticalX - tickSize}" y2="${viewBox.minY + viewBox.height}"></line>
+        <line x1="${dimensionBox.minX}" y1="${horizontalY}" x2="${dimensionBox.minX + dimensionBox.width}" y2="${horizontalY}" marker-start="url(#${markerIdBase}-start)" marker-end="url(#${markerIdBase}-end)"></line>
+        <line x1="${verticalX}" y1="${dimensionBox.minY}" x2="${verticalX}" y2="${dimensionBox.minY + dimensionBox.height}" marker-start="url(#${markerIdBase}-start)" marker-end="url(#${markerIdBase}-end)"></line>
+        <line x1="${dimensionBox.minX}" y1="${dimensionBox.minY}" x2="${dimensionBox.minX}" y2="${horizontalY}" stroke-dasharray="${strokeWidth * 2}"></line>
+        <line x1="${dimensionBox.minX + dimensionBox.width}" y1="${dimensionBox.minY}" x2="${dimensionBox.minX + dimensionBox.width}" y2="${horizontalY}" stroke-dasharray="${strokeWidth * 2}"></line>
+        <line x1="${dimensionBox.minX}" y1="${dimensionBox.minY}" x2="${verticalX}" y2="${dimensionBox.minY}" stroke-dasharray="${strokeWidth * 2}"></line>
+        <line x1="${dimensionBox.minX}" y1="${dimensionBox.minY + dimensionBox.height}" x2="${verticalX}" y2="${dimensionBox.minY + dimensionBox.height}" stroke-dasharray="${strokeWidth * 2}"></line>
+        <line x1="${dimensionBox.minX}" y1="${horizontalY}" x2="${dimensionBox.minX}" y2="${horizontalY + tickSize}"></line>
+        <line x1="${dimensionBox.minX + dimensionBox.width}" y1="${horizontalY}" x2="${dimensionBox.minX + dimensionBox.width}" y2="${horizontalY + tickSize}"></line>
+        <line x1="${verticalX}" y1="${dimensionBox.minY}" x2="${verticalX - tickSize}" y2="${dimensionBox.minY}"></line>
+        <line x1="${verticalX}" y1="${dimensionBox.minY + dimensionBox.height}" x2="${verticalX - tickSize}" y2="${dimensionBox.minY + dimensionBox.height}"></line>
       </g>`
       : '';
 
     const conversion = getConversion(unit);
-    const displayWidth = conversion.fromPx(targetWidthPx);
-    const displayHeight = conversion.fromPx(targetHeightPx);
+    const outputDisplayWidth = conversion.fromPx(targetWidthPx);
+    const outputDisplayHeight = conversion.fromPx(targetHeightPx);
+    const dimensionWidthRatio =
+      viewBox.width > 0 ? dimensionBox.width / viewBox.width : 1;
+    const dimensionHeightRatio =
+      viewBox.height > 0 ? dimensionBox.height / viewBox.height : 1;
+    const measuredWidthPx =
+      Number.isFinite(dimensionWidthRatio) && Number.isFinite(targetWidthPx)
+        ? targetWidthPx * dimensionWidthRatio
+        : targetWidthPx;
+    const measuredHeightPx =
+      Number.isFinite(dimensionHeightRatio) && Number.isFinite(targetHeightPx)
+        ? targetHeightPx * dimensionHeightRatio
+        : targetHeightPx;
+    const displayWidth = conversion.fromPx(measuredWidthPx);
+    const displayHeight = conversion.fromPx(measuredHeightPx);
     const unitLabel = conversion.label;
     const unitSuffix = conversion.suffix;
     const formattedDisplayWidth = formatDimensionDisplay(displayWidth, {
@@ -1608,8 +1750,8 @@
     const labels = includeDimensions
       ? `
       <g data-generated-by="dimension-overlay" fill="${dimensionColors.text}" font-size="${fontSize}" font-weight="600" font-family="'Segoe UI', 'Hiragino Sans', 'Yu Gothic', sans-serif">
-        <text x="${viewBox.minX + viewBox.width / 2}" y="${horizontalLabelY}" text-anchor="middle" dominant-baseline="text-before-edge">${widthLabelText}</text>
-        <text x="${verticalLabelX}" y="${viewBox.minY + viewBox.height / 2}" text-anchor="middle" dominant-baseline="middle" transform="rotate(-90 ${verticalLabelX} ${viewBox.minY + viewBox.height / 2})">${heightLabelText}</text>
+        <text x="${dimensionBox.minX + dimensionBox.width / 2}" y="${horizontalLabelY}" text-anchor="middle" dominant-baseline="text-before-edge">${widthLabelText}</text>
+        <text x="${verticalLabelX}" y="${dimensionBox.minY + dimensionBox.height / 2}" text-anchor="middle" dominant-baseline="middle" transform="rotate(-90 ${verticalLabelX} ${dimensionBox.minY + dimensionBox.height / 2})">${heightLabelText}</text>
       </g>`
       : '';
 
@@ -1618,8 +1760,8 @@
       <text data-generated-by="footer-text" x="${viewBox.minX + viewBox.width / 2}" y="${footerTextTop}" fill="${dimensionColors.text}" font-size="${footerFontSize}" font-weight="500" font-family="'Segoe UI', 'Hiragino Sans', 'Yu Gothic', sans-serif" text-anchor="middle" dominant-baseline="text-before-edge">${sanitizedFooterText}</text>`
       : '';
 
-    const widthAttr = `${formatNumber(displayWidth)}${unitSuffix}`;
-    const heightAttr = `${formatNumber(displayHeight)}${unitSuffix}`;
+    const widthAttr = `${formatNumber(outputDisplayWidth)}${unitSuffix}`;
+    const heightAttr = `${formatNumber(outputDisplayHeight)}${unitSuffix}`;
 
     const backgroundRect = transparentBackground
       ? ''
@@ -1767,6 +1909,10 @@
         removeAllStrokes(svgEl);
       }
       const metrics = getMetrics(svgEl);
+      const dimensionSelectionBounds =
+        dimensionTargetShapeKeys && dimensionTargetShapeKeys.size
+          ? getBoundsForShapeKeys(svgEl, dimensionTargetShapeKeys)
+          : null;
       let contentRatio = null;
       if (
         metrics &&
@@ -1828,6 +1974,7 @@
         precomputedMetrics: metrics,
         includeFooterText: shouldIncludeFooterText,
         footerText: shouldIncludeFooterText ? normalizedFooterTextInput : '',
+        dimensionBoundsOverride: dimensionSelectionBounds,
       });
       previewArea.innerHTML = svgString;
       updateDownloads(svgString, targetWidthPx, targetHeightPx, {
@@ -1898,12 +2045,14 @@
           updateDimensionInputs(metrics);
           updateShapeRemovalControls(svgEl);
           updateColorRemovalControls(svgEl);
+          updateDimensionTargetControls(svgEl);
           setMessage('画像ファイルをSVGとして読み込みました。寸法を調整してリサイズしてください。');
           goToStep('resize');
         } catch (error) {
           setMessage(error.message, true);
           updateShapeRemovalControls(null);
           updateColorRemovalControls(null);
+          updateDimensionTargetControls(null);
         }
       };
       image.onerror = () => {
@@ -1936,11 +2085,13 @@
             updateDimensionInputs(metrics);
             updateShapeRemovalControls(svgEl);
             updateColorRemovalControls(svgEl);
+            updateDimensionTargetControls(svgEl);
             goToStep('resize');
           } catch (error) {
             setMessage(error.message, true);
             updateShapeRemovalControls(null);
             updateColorRemovalControls(null);
+            updateDimensionTargetControls(null);
           }
         }
       };
@@ -2054,6 +2205,7 @@
 
   updateShapeRemovalControls(null);
   updateColorRemovalControls(null);
+  updateDimensionTargetControls(null);
 
   if (dimensionFontSizeSlider) {
     dimensionFontSizeSlider.addEventListener('input', () => {
@@ -2358,6 +2510,7 @@
       setMessage('');
       updateShapeRemovalControls(null);
       updateColorRemovalControls(null);
+      updateDimensionTargetControls(null);
       return;
     }
     try {
@@ -2366,6 +2519,7 @@
       updateDimensionInputs(metrics);
       updateShapeRemovalControls(svgEl);
       updateColorRemovalControls(svgEl);
+      updateDimensionTargetControls(svgEl);
       setMessage('SVGを解析しました。寸法を調整してリサイズしてください。');
       if (activeStepId === 'input') {
         goToStep('resize');
@@ -2374,6 +2528,7 @@
       setMessage(error.message, true);
       updateShapeRemovalControls(null);
       updateColorRemovalControls(null);
+      updateDimensionTargetControls(null);
     }
   });
 
